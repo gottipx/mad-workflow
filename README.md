@@ -1,8 +1,8 @@
 # MAD Workflow - Multi Agent Delivery Workflow
 
-![Enterprise Multi-Agent Architecture Overview](./OVERVIEW.png)
+![Multi Agent Delivery Workflow Overview](./OVERVIEW.png)
 
-This pack defines a lean operating model for multiple AI agents working on one codebase without losing delivery control.
+This repo defines a lean operating model for multiple AI agents working on one codebase without losing delivery control.
 
 The model is intentionally small:
 
@@ -109,7 +109,7 @@ repo/
 
 ## External skills
 
-If available, the workstream-agent or architect-agent may reuse external skills such as `to-spec` and `to-tickets`. This pack contains fallback rules so it remains usable without those skills.
+If available, the workstream-agent or architect-agent may reuse external skills such as `to-spec` and `to-tickets`. This repo contains fallback rules so it remains usable without those skills.
 
 
 ## Runtime metadata
