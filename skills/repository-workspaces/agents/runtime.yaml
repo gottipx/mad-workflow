@@ -1,0 +1,18 @@
+skill:
+  name: repository-workspaces
+  title: Agent Workspaces
+  description: Enforce one task, one branch, one isolated workspace, safe worktrees, and cleanup.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - workstream-agent
+  - coding-agent
+  - release-agent
+  triggers:
+  - create worktree
+  - branch plan
+  - shared repository
+  - merge conflict prevention

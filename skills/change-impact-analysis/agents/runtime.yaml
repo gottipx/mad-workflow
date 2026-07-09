@@ -1,0 +1,18 @@
+skill:
+  name: change-impact-analysis
+  title: Change Impact Analysis
+  description: Inspect diffs, classify changed artifacts, identify downstream tasks, and trigger revalidation.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - workstream-agent
+  - qa-agent
+  - release-agent
+  triggers:
+  - diff review
+  - changed contract
+  - changed module
+  - stale branch

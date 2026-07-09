@@ -1,0 +1,18 @@
+skill:
+  name: contracts-and-interfaces
+  title: Contract-First Interfaces
+  description: Manage APIs, schemas, events, UI interfaces, compatibility, and breaking-change control.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - architect-agent
+  - coding-agent
+  - qa-agent
+  triggers:
+  - contract change
+  - interface design
+  - schema update
+  - breaking change

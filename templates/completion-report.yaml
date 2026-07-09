@@ -1,0 +1,13 @@
+task_id: ""
+owner_agent: ""
+status: completed # completed | blocked | failed | partial
+branch: ""
+workspace: ""
+changed_files: []
+contracts_changed: []
+tests_run: []
+test_result: ""
+assumptions: []
+blockers: []
+downstream_impact: []
+recommended_next_actions: []

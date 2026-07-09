@@ -1,0 +1,3 @@
+interface:
+  display_name: Agent Coding Standards
+  short_description: Use in Hermes Agent, OpenCode, or any coding-agent runtime to make focused backend, frontend, mobile, data, infrastructure, or tooling changes safely.

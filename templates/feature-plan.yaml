@@ -1,0 +1,15 @@
+source_item: ""
+summary: ""
+execution_waves:
+  - wave: 1
+    purpose: "architecture and contracts"
+    tasks: []
+  - wave: 2
+    purpose: "coding"
+    tasks: []
+  - wave: 3
+    purpose: "qa and release"
+    tasks: []
+dependency_graph: {}
+risks: []
+open_decisions: []

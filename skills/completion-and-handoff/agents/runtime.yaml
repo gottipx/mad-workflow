@@ -1,0 +1,20 @@
+skill:
+  name: completion-and-handoff
+  title: Completion and Handoff
+  description: Produce concise completion, blocker, QA, impact, and release handoff reports.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - workstream-agent
+  - architect-agent
+  - coding-agent
+  - qa-agent
+  - release-agent
+  triggers:
+  - task complete
+  - blocked task
+  - handoff
+  - review summary

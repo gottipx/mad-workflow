@@ -1,0 +1,18 @@
+skill:
+  name: spec-and-ticket-decomposition
+  title: Spec to Tickets
+  description: Turn rough intent into a specification, implementation tickets, dependencies, acceptance criteria, and open decisions.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - architect-agent
+  - workstream-agent
+  triggers:
+  - rough requirement
+  - missing specification
+  - ticket breakdown
+  - to-spec
+  - to-tickets

@@ -1,0 +1,20 @@
+task_id: ""
+source_item: ""
+owner_agent: "" # workstream-agent | architect-agent | coding-agent | qa-agent | release-agent
+goal: ""
+context: ""
+mode: "" # architecture | coding | qa | release | revalidation
+allowed_scope: []
+forbidden_scope: []
+dependencies: []
+contracts_consumed: []
+contracts_produced_or_modified: []
+definition_of_done: []
+required_checks: []
+report_format:
+  required_fields:
+    - status
+    - changed_files
+    - tests_run
+    - blockers
+    - downstream_impact

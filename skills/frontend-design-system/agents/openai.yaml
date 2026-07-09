@@ -1,0 +1,3 @@
+interface:
+  display_name: Frontend Design System
+  short_description: Use in Hermes Agent, OpenCode, or any frontend-capable runtime to apply design tokens, components, accessibility, responsiveness, and UI state patterns.

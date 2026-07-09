@@ -1,0 +1,3 @@
+interface:
+  display_name: Contract-First Interfaces
+  short_description: Use in Hermes Agent, OpenCode, or any software agent runtime to manage APIs, schemas, events, UI interfaces, compatibility, and breaking-change control.

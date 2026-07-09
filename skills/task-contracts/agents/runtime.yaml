@@ -1,0 +1,20 @@
+skill:
+  name: task-contracts
+  title: Agent Task Contracts
+  description: Create bounded work packets with owner, workspace, scope, dependencies, checks, and report format.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - workstream-agent
+  - architect-agent
+  - coding-agent
+  - qa-agent
+  - release-agent
+  triggers:
+  - assign work
+  - delegate task
+  - define scope
+  - agent handoff

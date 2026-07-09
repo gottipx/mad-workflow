@@ -1,0 +1,3 @@
+interface:
+  display_name: Agent Task Contracts
+  short_description: Use in Hermes Agent, OpenCode, or any coding-agent runtime to create bounded work packets with owner, workspace, scope, dependencies, checks, and report format.

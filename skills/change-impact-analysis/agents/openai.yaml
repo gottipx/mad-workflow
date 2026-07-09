@@ -1,0 +1,3 @@
+interface:
+  display_name: Change Impact Analysis
+  short_description: Use in Hermes Agent, OpenCode, or any coding-agent runtime to inspect diffs, classify changed artifacts, identify downstream tasks, and trigger revalidation.

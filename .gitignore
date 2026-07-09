@@ -1,0 +1,33 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Build and packaging output
+dist/
+build/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+
+# Editor settings
+.vscode/
+
+# Archives and generated bundles
+*.zip
+*.tar
+*.tgz
+
+# Temporary files
+*.tmp
+*.swp
+
+multi-agent-concept-handoff.md

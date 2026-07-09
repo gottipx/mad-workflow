@@ -1,0 +1,3 @@
+interface:
+  display_name: Completion and Handoff
+  short_description: Use in Hermes Agent, OpenCode, or any agent runtime to produce concise completion, blocker, QA, impact, and release handoff reports.

@@ -1,0 +1,17 @@
+skill:
+  name: testing-and-quality-gates
+  title: Quality Gates
+  description: Define tests, run review checks, evaluate security, accessibility, performance, and decide gate readiness.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - qa-agent
+  - release-agent
+  triggers:
+  - quality review
+  - test plan
+  - merge gate
+  - release readiness

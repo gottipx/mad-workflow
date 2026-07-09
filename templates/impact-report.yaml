@@ -1,0 +1,9 @@
+source_task: ""
+changed_files: []
+changed_artifacts: []
+change_type: additive # internal | additive | behavioral | breaking | unclear
+impacted_tasks: []
+impacted_contracts: []
+required_revalidation: []
+risk_level: low # low | medium | high
+notes: []

@@ -1,0 +1,18 @@
+skill:
+  name: frontend-design-system
+  title: Frontend Design System
+  description: Apply design tokens, approved components, accessibility, responsive behavior, and UI state patterns.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - coding-agent
+  - qa-agent
+  - architect-agent
+  triggers:
+  - frontend task
+  - mobile UI task
+  - design system
+  - accessibility review

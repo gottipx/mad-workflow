@@ -1,0 +1,16 @@
+skill:
+  name: workstream-management
+  title: Multi-Agent Workstream
+  description: Run one board item through task waves, dependencies, blockers, revalidation, and handoffs.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - workstream-agent
+  triggers:
+  - new board item
+  - multi-agent planning
+  - blocked dependency
+  - revalidation needed

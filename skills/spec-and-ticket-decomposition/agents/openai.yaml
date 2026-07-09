@@ -1,0 +1,3 @@
+interface:
+  display_name: Spec to Tickets
+  short_description: Use in Hermes Agent, OpenCode, or any agent runtime to turn rough intent into a specification, tickets, dependencies, acceptance criteria, and open decisions.

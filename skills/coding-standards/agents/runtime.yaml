@@ -1,0 +1,16 @@
+skill:
+  name: coding-standards
+  title: Agent Coding Standards
+  description: Make focused backend, frontend, mobile, data, infrastructure, or tooling changes safely.
+  primary_runtime: hermes-agent
+  compatible_runtimes:
+  - hermes-agent
+  - opencode
+  - chatgpt
+  recommended_agents:
+  - coding-agent
+  triggers:
+  - implement task
+  - modify code
+  - refactor within scope
+  - add tests
