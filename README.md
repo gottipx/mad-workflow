@@ -1,4 +1,6 @@
-# Enterprise Multi-Agent Architecture Pack - 5-Agent Edition
+# MAD Workflow - Multi Agent Delivery Workflow
+
+![Enterprise Multi-Agent Architecture Overview](./OVERVIEW.png)
 
 This pack defines a lean operating model for multiple AI agents working on one codebase without losing delivery control.
 
