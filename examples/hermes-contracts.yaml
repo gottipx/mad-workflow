@@ -1,0 +1,9 @@
+contracts:
+  example-contract:
+    path: docs/contracts/example-api.yaml
+    producers:
+      - TASK-001
+    consumers:
+      - TASK-002
+      - TASK-003
+    notes: Example shared contract used by the Hermes MAD impact command.

@@ -1,0 +1,6 @@
+name: example-api
+version: 1
+endpoints:
+  - method: GET
+    path: /example
+    response: ExampleResponse

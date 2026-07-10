@@ -98,6 +98,25 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     p_gate.add_argument("--block-on-fail", action="store_true", help="Block the Kanban task when the gate fails")
     p_gate.add_argument("--json", action="store_true")
 
+    p_graph = sub.add_parser("graph", help="Validate and query a MAD contract dependency registry")
+    graph_sub = p_graph.add_subparsers(dest="graph_action")
+    p_graph_validate = graph_sub.add_parser("validate", help="Validate contracts registry structure")
+    p_graph_validate.add_argument("graph")
+    p_graph_validate.add_argument("--repo", default=".", help="Repo root used to check contract paths")
+    p_graph_validate.add_argument("--json", action="store_true")
+    p_graph_consumers = graph_sub.add_parser("consumers", help="List consumers for a contract path or id")
+    p_graph_consumers.add_argument("graph")
+    p_graph_consumers.add_argument("contract")
+    p_graph_consumers.add_argument("--json", action="store_true")
+
+    p_impact = sub.add_parser("impact", help="Generate an impact report from git diff and a contract registry")
+    p_impact.add_argument("task_id")
+    p_impact.add_argument("--graph", default=".agents/contracts.yaml", help="Contract registry path")
+    p_impact.add_argument("--repo", default=".")
+    p_impact.add_argument("--base", default=None, help="Base ref for committed diff, e.g. origin/main")
+    p_impact.add_argument("--out", default=None, help="Write impact report YAML to this path")
+    p_impact.add_argument("--json", action="store_true")
+
     p_create = sub.add_parser("create-task", help="Create a Hermes Kanban task from a MAD task contract")
     p_create.add_argument("contract")
     p_create.add_argument("--board", default=None)
@@ -144,6 +163,10 @@ def _mad_command(args: argparse.Namespace) -> int:
         return cmd_validate_report(args)
     if action == "gate":
         return cmd_gate(args)
+    if action == "graph":
+        return cmd_graph(args)
+    if action == "impact":
+        return cmd_impact(args)
     if action == "create-task":
         return cmd_create_task(args)
     if action == "check-scope":
@@ -489,6 +512,178 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     _emit({"status": "MAD init complete" if not errors else "MAD init completed with errors", "messages": messages, "errors": errors}, args.json)
     return 0 if not errors else 1
+
+
+def load_contract_graph(path: str | Path) -> dict[str, Any]:
+    data = load_yaml_file(path)
+    contracts = data.get("contracts")
+    if not isinstance(contracts, dict):
+        raise ValueError("contract graph must contain a 'contracts' mapping")
+    return data
+
+
+def _contract_entries(graph: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    out: list[tuple[str, dict[str, Any]]] = []
+    for contract_id, entry in (graph.get("contracts") or {}).items():
+        if isinstance(entry, dict):
+            out.append((str(contract_id), entry))
+    return out
+
+
+def validate_contract_graph(data: dict[str, Any], repo: str | Path = ".") -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    contracts = data.get("contracts")
+    if not isinstance(contracts, dict):
+        return ["contracts must be a mapping"], warnings
+    repo_root = Path(repo).expanduser().resolve()
+    seen_paths: dict[str, str] = {}
+    for contract_id, entry in contracts.items():
+        if not isinstance(entry, dict):
+            errors.append(f"contracts.{contract_id} must be a mapping")
+            continue
+        path = str(entry.get("path") or "").strip()
+        if not path:
+            errors.append(f"contracts.{contract_id}.path is required")
+        elif path in seen_paths:
+            errors.append(f"contract path {path!r} is used by both {seen_paths[path]!r} and {contract_id!r}")
+        else:
+            seen_paths[path] = str(contract_id)
+            if not (repo_root / path).exists():
+                warnings.append(f"contract path does not exist yet: {path}")
+        for field in ["producers", "consumers"]:
+            if field in entry and not isinstance(entry[field], list):
+                errors.append(f"contracts.{contract_id}.{field} must be a list")
+        if not entry.get("consumers"):
+            warnings.append(f"contracts.{contract_id} has no consumers")
+    return errors, warnings
+
+
+def _match_contract(graph: dict[str, Any], query: str) -> tuple[str, dict[str, Any]] | None:
+    q = query.strip().lstrip("/")
+    for contract_id, entry in _contract_entries(graph):
+        if q == contract_id or q == str(entry.get("path") or "").lstrip("/"):
+            return contract_id, entry
+    return None
+
+
+def _changed_contracts(graph: dict[str, Any], changed_files: list[str]) -> list[tuple[str, dict[str, Any]]]:
+    changed = set(f.lstrip("/") for f in changed_files)
+    hits: list[tuple[str, dict[str, Any]]] = []
+    for contract_id, entry in _contract_entries(graph):
+        path = str(entry.get("path") or "").lstrip("/")
+        if path and path in changed:
+            hits.append((contract_id, entry))
+    return hits
+
+
+def _impact_report(task_id: str, changed_files: list[str], graph: dict[str, Any]) -> dict[str, Any]:
+    hits = _changed_contracts(graph, changed_files)
+    impacted_tasks: list[str] = []
+    impacted_contracts: list[str] = []
+    required_revalidation: list[str] = []
+    for contract_id, entry in hits:
+        impacted_contracts.append(contract_id)
+        for consumer in entry.get("consumers") or []:
+            consumer_s = str(consumer)
+            if consumer_s != task_id and consumer_s not in impacted_tasks:
+                impacted_tasks.append(consumer_s)
+                required_revalidation.append(consumer_s)
+    change_type = "internal" if not hits else "behavioral"
+    risk_level = "low" if not hits else "medium"
+    return {
+        "source_task": task_id,
+        "changed_files": changed_files,
+        "changed_artifacts": [entry.get("path") for _, entry in hits],
+        "change_type": change_type,
+        "impacted_tasks": impacted_tasks,
+        "impacted_contracts": impacted_contracts,
+        "required_revalidation": required_revalidation,
+        "risk_level": risk_level,
+        "notes": ["Generated by hermes mad impact"],
+    }
+
+
+def cmd_graph(args: argparse.Namespace) -> int:
+    action = getattr(args, "graph_action", None)
+    if action is None:
+        print("Use `hermes mad graph --help` for commands.")
+        return 2
+    try:
+        graph = load_contract_graph(args.graph)
+        if action == "validate":
+            errors, warnings = validate_contract_graph(graph, args.repo)
+            ok = not errors
+            _emit({
+                "status": "PASS: contract graph is valid" if ok else "FAIL: contract graph is invalid",
+                "graph": args.graph,
+                "contracts": len(graph.get("contracts") or {}),
+                "errors": errors,
+                "warnings": warnings,
+            }, args.json)
+            return 0 if ok else 1
+        if action == "consumers":
+            match = _match_contract(graph, args.contract)
+            if not match:
+                _emit({"status": "FAIL: contract not found", "errors": [args.contract]}, args.json)
+                return 1
+            contract_id, entry = match
+            consumers = list(map(str, entry.get("consumers") or []))
+            _emit({
+                "status": "contract consumers",
+                "contract_id": contract_id,
+                "path": entry.get("path"),
+                "consumers": consumers,
+                "messages": [f"{contract_id}: {', '.join(consumers) if consumers else '(none)'}"],
+            }, args.json)
+            return 0
+        print(f"Unknown graph action: {action}", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        _emit({"status": "FAIL: could not read contract graph", "errors": [str(exc)]}, getattr(args, "json", False))
+        return 1
+
+
+def cmd_impact(args: argparse.Namespace) -> int:
+    try:
+        graph = load_contract_graph(args.graph)
+        graph_errors, graph_warnings = validate_contract_graph(graph, args.repo)
+        if graph_errors:
+            _emit({"status": "FAIL: contract graph is invalid", "errors": graph_errors, "warnings": graph_warnings}, args.json)
+            return 1
+        repo = Path(args.repo).expanduser().resolve()
+        if not (repo / ".git").exists():
+            proc = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
+            if proc.returncode != 0:
+                raise ValueError(f"not a git repository: {repo}")
+            repo = Path(proc.stdout.strip())
+        changed, git_warnings = _git_changed_files(repo, args.base)
+        report = _impact_report(args.task_id, changed, graph)
+        errors, warnings = validate_report_data("impact", report)
+        warnings.extend(graph_warnings)
+        warnings.extend(git_warnings)
+        if args.out:
+            out = Path(args.out).expanduser()
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(yaml.safe_dump(report, sort_keys=False), encoding="utf-8")
+        ok = not errors
+        payload = {
+            "status": "PASS: impact report generated" if ok else "FAIL: generated impact report is invalid",
+            "report": report,
+            "out": args.out,
+            "errors": errors,
+            "warnings": warnings,
+            "messages": [
+                f"changed files: {len(changed)}",
+                f"impacted contracts: {len(report['impacted_contracts'])}",
+                f"required revalidation: {len(report['required_revalidation'])}",
+            ],
+        }
+        _emit(payload, args.json)
+        return 0 if ok else 1
+    except Exception as exc:
+        _emit({"status": "FAIL: could not generate impact report", "errors": [str(exc)]}, args.json)
+        return 1
 
 
 def _slug(s: str) -> str:

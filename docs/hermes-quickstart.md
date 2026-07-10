@@ -115,6 +115,27 @@ hermes mad gate <kanban-task-id> --stage integration \
 
 Use `--block-on-fail` when you want a failed gate to block the Kanban task with the gate errors.
 
+## Track contract impact
+
+Define shared contracts in a registry:
+
+```bash
+hermes mad graph validate examples/hermes-contracts.yaml --repo .
+hermes mad graph consumers examples/hermes-contracts.yaml docs/contracts/example-api.yaml
+```
+
+Generate an impact report from the current git diff:
+
+```bash
+hermes mad impact TASK-001 \
+  --graph examples/hermes-contracts.yaml \
+  --repo . \
+  --base origin/main \
+  --out .agents/reports/TASK-001-impact.yaml
+```
+
+The generated report lists changed contract artifacts, impacted consumer tasks, and required revalidation tasks.
+
 ## Render a worker prompt
 
 ```bash
