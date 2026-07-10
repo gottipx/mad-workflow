@@ -1,50 +1,56 @@
 ---
 name: spec-and-ticket-decomposition
-description: "turn rough requirements, notes, documents, conversations, or board items into a concise technical specification and implementation-ready tickets. use when the architect-agent or workstream-agent must clarify intent, reuse external skills such as to-spec or to-tickets, define acceptance criteria, or produce a dependency-aware task list."
+description: "Transform rough intent into an authoritative, testable specification and coherent dependency-aware task candidates. Use when clarifying requirements, defining non-goals and acceptance criteria, or preparing feature plans before task contracts."
 ---
 
 # Spec and Ticket Decomposition
 
-Use this skill to convert intent into a compact specification and board-ready tickets.
+Turn intent into execution without hiding decisions in prose.
 
-## External skill preference
+## Source discipline
 
-If available, use `to-spec` for the specification step. If available, use `to-tickets` for task decomposition. If unavailable, use the fallback formats below.
+Classify every input as:
 
-## Specification fallback format
+- approved fact/decision
+- repository or contract evidence
+- inference to validate
+- unresolved question with an owner
 
-```markdown
-# Specification
+Conflicts and missing authority remain explicit. Never resolve business, legal, security-policy, or data-ownership ambiguity by convenience.
 
-## Problem
-## Goal
-## Non-goals
-## Users / actors
-## Required behavior
-## Acceptance criteria
-## Constraints
-## Risks
-## Open decisions
-```
+## Specification procedure
 
-## Decomposition rules
+1. State the problem, affected actors, user/system value, measurable goal, and non-goals.
+2. Describe required behavior, failure/recovery behavior, permissions, boundary conditions, and state/data lifecycle where relevant.
+3. Identify controlled contracts, owners, producers/consumers, compatibility, migration, and rollback constraints.
+4. Capture applicable quality attributes: security/privacy, accessibility, reliability, performance, observability, operability, and compliance.
+5. Convert every requirement and material risk into observable acceptance criteria.
+6. Separate approved decisions from proposals; list open decisions with consequence and required owner.
+7. Check traceability: every approved requirement maps to behavior and evidence; everything else is a non-goal, risk, or open decision.
 
-Create task bundles, not tiny chores. Split work by contract boundary, ownership boundary, user-facing slice, integration risk, and testability.
+Completion criterion: implementation behavior is unambiguous, QA can decide pass/fail, and no material decision is disguised as an assumption.
 
-Do not split when subtasks would constantly edit the same files or cannot be validated independently.
+## Acceptance-criterion test
 
-## Ticket format
+A criterion is valid when it names preconditions, observable action/event, expected result, and critical negative/recovery behavior. Use Given/When/Then when stateful interactions benefit. Replace subjective words with a project policy, threshold, or explicit observation.
 
-```markdown
-## Goal
-## Scope
-## Out of scope
-## Dependencies
-## Acceptance criteria
-## Required checks
-## Notes for implementation
-```
+## Decomposition procedure
+
+1. Find seams by user-facing outcome, controlled contract, ownership, risk, and independent testability.
+2. Build the artifact dependency graph before choosing execution order.
+3. Form coherent task bundles: one outcome, one accountable owner type, bounded scope, stable inputs, and independently verifiable completion.
+4. Separate architecture/contract decisions, implementation, QA, release, and revalidation when authority differs.
+5. Avoid splits that create shared mutable checkout work or repeated edits to high-conflict files.
+6. For each candidate, provide goal, scope/out-of-scope, dependencies, consumed/produced contracts, definition of done, and required evidence.
+7. Group candidates into execution waves and flag which tasks may safely run in parallel.
+8. Validate coverage: every acceptance criterion and controlled change has an owner; no task exists without a requirement/risk trace.
+
+Completion criterion: the candidate graph covers the specification exactly—no missing requirement and no speculative task.
+
+## External accelerators
+
+Use `to-spec` or `to-tickets` when available, then apply this skill's source, acceptance, decomposition, and completeness tests. Their output is draft until it passes these gates.
 
 ## Output
 
-Return the specification, ticket list, dependency notes, and open decisions. Keep it short enough to be operational.
+Produce a compact specification, candidate tasks, dependency graph, wave plan, controlled-contract notes, risk register, and open decisions. The workstream agent owns final task contracts and assignment.

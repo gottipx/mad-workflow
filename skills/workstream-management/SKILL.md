@@ -1,53 +1,72 @@
 ---
 name: workstream-management
-description: "coordinate multi-agent software delivery from a kanban-style work item through planning, task contracts, dependency control, isolated workspaces, quality review, and release readiness. use when the workstream-agent must split work across agents, manage board state, decide what can run in parallel, or trigger revalidation after a change."
+description: "Orchestrate a MAD work item through readiness, artifact-based dependency planning, execution waves, assignment, staleness, revalidation, QA, and release. Use when controlling Kanban flow or deciding what may run next or in parallel."
 ---
 
 # Workstream Management
 
-Use this skill to run the delivery flow for one work item or feature across the five-agent model.
+Produce truthful, controlled flow. Board state follows evidence; it never substitutes for it.
 
-## Outcome
+## Inputs
 
-Produce controlled execution: clear task contracts, known dependencies, isolated workspaces, explicit quality gates, and traceable release readiness.
+Read the source item, approved specification/decisions, current board, task contracts, `.agents/contracts.yaml`, reports, repository state, and available isolated workspaces. Record missing authority as a blocker.
 
-## Procedure
+## Control loop
 
-1. Read the source work item and capture goal, constraints, acceptance criteria, and known risks.
-2. Use `to-spec` for specification and `to-tickets` for decomposition when available.
-3. If external planning skills are unavailable, create a compact delivery brief and task list locally.
-4. Group work into waves:
-   - Wave 1: requirement clarification, architecture, contracts, design constraints.
-   - Wave 2: coding tasks with stable inputs.
-   - Wave 3: QA review, integration, release preparation.
-5. Create one task contract per executable task.
-6. Assign exactly one accountable owner per task.
-7. Require one branch and one isolated workspace per active task.
-8. Track dependencies by artifacts: contracts consumed, contracts produced, modules touched.
-9. When a consumed artifact changes, mark downstream tasks stale and create revalidation tasks.
-10. Send only QA-approved branches to the release-agent.
+1. **Observe:** reconcile board state with current artifacts, immutable revisions, dependencies, blockers, and reports.
+2. **Shape:** capture goal, acceptance criteria, non-goals, controlled artifacts, risks, and unresolved decisions. Route specification/contract ambiguity to `architect-agent`.
+3. **Graph:** model dependencies by consumed/produced artifact, not chronology. Identify shared-file and ownership conflicts.
+4. **Wave:** group ready work into Shape, Build, Prove, Release, and Revalidate waves as needed. Read `references/execution-waves.md` for multi-wave work.
+5. **Contract:** produce one reviewed `templates/task-contract.yaml` per executable task. Validate it and remove every placeholder before `Ready`.
+6. **Admit:** assign one owner, branch, workspace, and base revision only when the global readiness gate passes.
+7. **Monitor:** react to reports and repository evidence. Keep every active task's owner, state, premise, and next action current.
+8. **Revalidate:** when a consumed artifact changes, pause affected tasks, run impact analysis, mark them stale, and create explicit revalidation.
+9. **Converge:** request QA for completed candidate revisions; send only QA-approved, dependency-consistent revisions to release.
+10. **Close:** verify traceability, follow-up ownership, workspace disposition, and truthful final board state.
 
-## Parallelization rules
+Completion criterion: every task is either safely closed or has one accountable owner, an evidence-backed state, fresh dependencies, and an explicit next action/restart condition.
 
-Parallelize only when tasks have stable inputs, low file overlap, separate workspaces, and independently checkable outputs. Sequence tasks when they modify shared contracts, depend on unresolved decisions, or touch the same high-conflict files.
+## Readiness test
 
-## Board states
+A task enters `Ready` only if:
 
-```text
-Backlog -> Ready -> In Progress -> Review -> Integration -> Done
-Blocked may be used from any state.
+- behavior and definition of done are observable
+- allowed/forbidden scope and controlled artifacts are explicit
+- required inputs/contracts are stable or explicitly mocked
+- checks are executable and proportionate to risk
+- owner type, base, branch, and workspace strategy are known
+- no open decision can materially change implementation
+
+## Parallelization test
+
+Parallelize only when inputs are stable, file ownership does not materially overlap, workspaces are isolated, outputs are independently testable, and one failure does not invalidate another task's premise. Otherwise sequence.
+
+## Event responses
+
+| Event | Response |
+|---|---|
+| forbidden scope needed | block and route ownership/scope decision |
+| controlled artifact changed | generate impact; mark consumers stale; revalidate |
+| completion not `completed` | keep out of Review; assign restart action |
+| QA `fail` | return required outcomes and revalidation scope to owner |
+| QA `blocked` | route missing input/environment to its owner |
+| QA `pass_with_notes` | require non-blocking classification and follow-up owner |
+| overlapping ownership or branch drift | stop, reconcile bases/ownership, then resume |
+
+## Hermes acceleration
+
+When installed, use:
+
+```bash
+hermes mad decompose <feature-plan.yaml> --out .agents/task-contracts
+hermes mad validate-contract <contract.yaml>
+hermes mad create-task <contract.yaml>
+hermes mad impact <task-id> --graph .agents/contracts.yaml --repo . --base <base>
+hermes mad gate <kanban-task-id> --stage <review|integration|done>
 ```
+
+Generated decomposition is draft material. Review it before dispatch.
 
 ## Required outputs
 
-- delivery brief or specification reference
-- task list
-- dependency graph
-- task contracts
-- branch/workspace plan
-- revalidation tasks when needed
-- release request for completed work
-
-## Reference
-
-Read `references/execution-waves.md` when planning complex work with multiple dependent tasks.
+Feature plan/spec reference, dependency registry, validated task contracts, execution/assignment plan, board decisions, revalidation tasks, and an evidence-complete release request.
