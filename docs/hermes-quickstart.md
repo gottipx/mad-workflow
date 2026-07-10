@@ -136,6 +136,43 @@ hermes mad impact TASK-001 \
 
 The generated report lists changed contract artifacts, impacted consumer tasks, and required revalidation tasks.
 
+## Map MAD tasks to GitHub
+
+Generate a GitHub issue body from a task contract:
+
+```bash
+hermes mad github issue-body examples/hermes-task-contract.yaml --out /tmp/TASK-001-issue.md
+```
+
+Generate a PR body from a contract plus MAD reports:
+
+```bash
+hermes mad github pr-body examples/hermes-task-contract.yaml \
+  --completion examples/hermes-completion-report.yaml \
+  --qa examples/hermes-quality-gate-report.yaml \
+  --impact examples/hermes-impact-report.yaml \
+  --out /tmp/TASK-001-pr.md
+```
+
+Create an issue with `gh` after reviewing the generated body:
+
+```bash
+hermes mad github create-issue examples/hermes-task-contract.yaml \
+  --label mad --label task
+```
+
+Dry-run first if you do not want network side effects:
+
+```bash
+hermes mad github create-issue examples/hermes-task-contract.yaml --dry-run
+```
+
+Record a PR URL on a Kanban task:
+
+```bash
+hermes mad github link-pr <kanban-task-id> https://github.com/owner/repo/pull/123
+```
+
 ## Render a worker prompt
 
 ```bash

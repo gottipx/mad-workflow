@@ -117,6 +117,31 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     p_impact.add_argument("--out", default=None, help="Write impact report YAML to this path")
     p_impact.add_argument("--json", action="store_true")
 
+    p_gh = sub.add_parser("github", help="Generate or create GitHub issues/PR bodies from MAD artifacts")
+    gh_sub = p_gh.add_subparsers(dest="github_action")
+    p_issue_body = gh_sub.add_parser("issue-body", help="Render a GitHub issue body from a task contract")
+    p_issue_body.add_argument("contract")
+    p_issue_body.add_argument("--out", default=None)
+    p_issue_body.add_argument("--json", action="store_true")
+    p_pr_body = gh_sub.add_parser("pr-body", help="Render a PR body from MAD reports")
+    p_pr_body.add_argument("contract")
+    p_pr_body.add_argument("--completion", default=None)
+    p_pr_body.add_argument("--qa", default=None)
+    p_pr_body.add_argument("--impact", default=None)
+    p_pr_body.add_argument("--out", default=None)
+    p_pr_body.add_argument("--json", action="store_true")
+    p_create_issue = gh_sub.add_parser("create-issue", help="Create a GitHub issue from a task contract using gh")
+    p_create_issue.add_argument("contract")
+    p_create_issue.add_argument("--repo", default=None, help="owner/repo; defaults to gh current repo")
+    p_create_issue.add_argument("--label", action="append", default=[])
+    p_create_issue.add_argument("--dry-run", action="store_true")
+    p_create_issue.add_argument("--json", action="store_true")
+    p_link_pr = gh_sub.add_parser("link-pr", help="Record a PR URL on a Kanban task as a comment")
+    p_link_pr.add_argument("task_id")
+    p_link_pr.add_argument("pr_url")
+    p_link_pr.add_argument("--board", default=None)
+    p_link_pr.add_argument("--json", action="store_true")
+
     p_create = sub.add_parser("create-task", help="Create a Hermes Kanban task from a MAD task contract")
     p_create.add_argument("contract")
     p_create.add_argument("--board", default=None)
@@ -167,6 +192,8 @@ def _mad_command(args: argparse.Namespace) -> int:
         return cmd_graph(args)
     if action == "impact":
         return cmd_impact(args)
+    if action == "github":
+        return cmd_github(args)
     if action == "create-task":
         return cmd_create_task(args)
     if action == "check-scope":
@@ -641,6 +668,191 @@ def cmd_graph(args: argparse.Namespace) -> int:
         return 2
     except Exception as exc:
         _emit({"status": "FAIL: could not read contract graph", "errors": [str(exc)]}, getattr(args, "json", False))
+        return 1
+
+
+def _md_list(items: list[Any]) -> str:
+    if not items:
+        return "- None"
+    return "\n".join(f"- {item}" for item in items)
+
+
+def github_issue_body(contract: dict[str, Any]) -> str:
+    return f"""## MAD Task Contract
+
+**Task:** `{contract.get('task_id', '')}`  
+**Source item:** `{contract.get('source_item', '')}`  
+**Owner agent:** `{contract.get('owner_agent', '')}`  
+**Mode:** `{contract.get('mode', '')}`
+
+## Goal
+
+{contract.get('goal', '')}
+
+## Context
+
+{contract.get('context', '') or '_No extra context provided._'}
+
+## Allowed scope
+
+{_md_list(contract.get('allowed_scope') or [])}
+
+## Forbidden scope
+
+{_md_list(contract.get('forbidden_scope') or [])}
+
+## Dependencies
+
+{_md_list(contract.get('dependencies') or [])}
+
+## Contracts consumed
+
+{_md_list(contract.get('contracts_consumed') or [])}
+
+## Contracts produced or modified
+
+{_md_list(contract.get('contracts_produced_or_modified') or [])}
+
+## Definition of done
+
+{_md_list(contract.get('definition_of_done') or [])}
+
+## Required checks
+
+{_md_list(contract.get('required_checks') or [])}
+"""
+
+
+def github_pr_body(contract: dict[str, Any], completion: dict[str, Any] | None, qa: dict[str, Any] | None, impact: dict[str, Any] | None) -> str:
+    task_id = contract.get("task_id", "")
+    checks = (completion or {}).get("tests_run") or (qa or {}).get("checks_run") or []
+    changed_files = (completion or {}).get("changed_files") or (impact or {}).get("changed_files") or []
+    qa_decision = (qa or {}).get("decision", "not provided")
+    impact_type = (impact or {}).get("change_type", "not provided")
+    risk = (impact or {}).get("risk_level", "not provided")
+    return f"""## MAD Release Candidate
+
+**Task:** `{task_id}`  
+**Source item:** `{contract.get('source_item', '')}`  
+**Owner agent:** `{contract.get('owner_agent', '')}`
+
+## Goal
+
+{contract.get('goal', '')}
+
+## Changed files
+
+{_md_list(changed_files)}
+
+## Checks run
+
+{_md_list(checks)}
+
+## QA gate
+
+Decision: `{qa_decision}`
+
+Required fixes:
+
+{_md_list((qa or {}).get('required_fixes') or [])}
+
+## Contract impact
+
+Change type: `{impact_type}`  
+Risk level: `{risk}`
+
+Impacted contracts:
+
+{_md_list((impact or {}).get('impacted_contracts') or [])}
+
+Required revalidation:
+
+{_md_list((impact or {}).get('required_revalidation') or [])}
+
+## Human approval
+
+Human review remains required before merge.
+"""
+
+
+def _write_or_print_markdown(markdown: str, out: str | None, as_json: bool, label: str) -> None:
+    if out:
+        path = Path(out).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(markdown, encoding="utf-8")
+    if as_json:
+        print(json.dumps({"status": f"generated {label}", "out": out, "markdown": markdown}, indent=2))
+    else:
+        if out:
+            print(f"generated {label}: {out}")
+        else:
+            print(markdown)
+
+
+def cmd_github(args: argparse.Namespace) -> int:
+    action = getattr(args, "github_action", None)
+    if action is None:
+        print("Use `hermes mad github --help` for commands.")
+        return 2
+    try:
+        if action == "issue-body":
+            contract = load_contract(args.contract)
+            errors, warnings = validate_contract(contract)
+            if errors:
+                _emit({"status": "FAIL: contract is invalid", "errors": errors, "warnings": warnings}, args.json)
+                return 1
+            _write_or_print_markdown(github_issue_body(contract), args.out, args.json, "issue body")
+            return 0
+        if action == "pr-body":
+            contract = load_contract(args.contract)
+            errors, warnings = validate_contract(contract)
+            if errors:
+                _emit({"status": "FAIL: contract is invalid", "errors": errors, "warnings": warnings}, args.json)
+                return 1
+            completion = load_yaml_file(args.completion) if args.completion else None
+            qa = load_yaml_file(args.qa) if args.qa else None
+            impact = load_yaml_file(args.impact) if args.impact else None
+            _write_or_print_markdown(github_pr_body(contract, completion, qa, impact), args.out, args.json, "PR body")
+            return 0
+        if action == "create-issue":
+            contract = load_contract(args.contract)
+            errors, warnings = validate_contract(contract)
+            if errors:
+                _emit({"status": "FAIL: contract is invalid", "errors": errors, "warnings": warnings}, args.json)
+                return 1
+            body = github_issue_body(contract)
+            title = f"{contract.get('task_id')}: {contract.get('goal')}"
+            if args.dry_run:
+                _emit({"status": "dry-run: GitHub issue not created", "title": title, "body": body, "warnings": warnings}, args.json)
+                return 0
+            gh = shutil.which("gh")
+            if not gh:
+                raise RuntimeError("gh CLI is required for create-issue")
+            body_file = Path(os.environ.get("TMPDIR", "/tmp")) / f"mad-issue-{_slug(str(contract.get('task_id')))}.md"
+            body_file.write_text(body, encoding="utf-8")
+            cmd = [gh, "issue", "create", "--title", title, "--body-file", str(body_file)]
+            if args.repo:
+                cmd += ["--repo", args.repo]
+            for label in args.label or []:
+                cmd += ["--label", label]
+            proc = _run(cmd)
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "gh issue create failed")
+            url = proc.stdout.strip()
+            _emit({"status": "created GitHub issue", "url": url, "messages": [url], "warnings": warnings}, args.json)
+            return 0
+        if action == "link-pr":
+            from hermes_cli import kanban_db as kb
+            with kb.connect(board=args.board) as conn:
+                if kb.get_task(conn, args.task_id) is None:
+                    raise ValueError(f"unknown Kanban task: {args.task_id}")
+                kb.add_comment(conn, args.task_id, "mad-workflow", f"GitHub PR: {args.pr_url}")
+            _emit({"status": "linked PR to Kanban task", "messages": [f"{args.task_id}: {args.pr_url}"]}, args.json)
+            return 0
+        print(f"Unknown github action: {action}", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        _emit({"status": "FAIL: GitHub mapping command failed", "errors": [str(exc)]}, getattr(args, "json", False))
         return 1
 
 
