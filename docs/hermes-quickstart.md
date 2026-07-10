@@ -57,6 +57,17 @@ hermes mad validate-contract examples/hermes-task-contract.yaml
 
 The validator checks that required MAD fields exist, list fields are lists, `owner_agent` is one of the five MAD roles, `mode` is known, and `allowed_scope` does not overlap `forbidden_scope`.
 
+## Decompose a feature plan into draft contracts
+
+Generate reviewable task-contract drafts from a feature plan:
+
+```bash
+hermes mad decompose examples/hermes-feature-plan.yaml --out /tmp/mad-contracts
+hermes mad validate-contract /tmp/mad-contracts/TASK-001-define-the-example-api-contract.yaml
+```
+
+Decomposition is deterministic and intentionally conservative. Review generated contracts before creating Kanban tasks, especially any placeholder scope/check fields.
+
 ## Create a Kanban task from a contract
 
 ```bash

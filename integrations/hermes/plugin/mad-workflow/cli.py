@@ -164,6 +164,12 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     p_prompt.add_argument("contract")
     p_prompt.add_argument("--role", default=None, help="Override owner_agent role")
 
+    p_decompose = sub.add_parser("decompose", help="Generate draft MAD task contracts from a feature plan")
+    p_decompose.add_argument("feature_plan")
+    p_decompose.add_argument("--out", default=".agents/task-contracts", help="Output directory for generated contracts")
+    p_decompose.add_argument("--start", type=int, default=1, help="First TASK number to use")
+    p_decompose.add_argument("--json", action="store_true")
+
 
 def mad_command(args: argparse.Namespace) -> None:
     """Top-level CLI handler.
@@ -194,6 +200,8 @@ def _mad_command(args: argparse.Namespace) -> int:
         return cmd_impact(args)
     if action == "github":
         return cmd_github(args)
+    if action == "decompose":
+        return cmd_decompose(args)
     if action == "create-task":
         return cmd_create_task(args)
     if action == "check-scope":
@@ -1067,6 +1075,124 @@ def cmd_check_scope(args: argparse.Namespace) -> int:
         return 0 if ok else 1
     except Exception as exc:
         _emit({"status": "FAIL: could not check scope", "errors": [str(exc)]}, args.json)
+        return 1
+
+
+def _task_text(task: Any) -> str:
+    if isinstance(task, str):
+        return task
+    if isinstance(task, dict):
+        return str(task.get("title") or task.get("goal") or task.get("name") or "Untitled task")
+    return str(task)
+
+
+def _task_scope(task: Any, key: str) -> list[str]:
+    if isinstance(task, dict):
+        value = task.get(key)
+        if isinstance(value, list):
+            return list(map(str, value))
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+    return []
+
+
+def _wave_role_and_mode(purpose: str, task: Any) -> tuple[str, str]:
+    if isinstance(task, dict):
+        owner = str(task.get("owner_agent") or "").strip()
+        mode = str(task.get("mode") or "").strip()
+        if owner and mode:
+            return owner, mode
+    task_text = _task_text(task).lower()
+    purpose_text = purpose.lower()
+    if "release" in task_text or "integrat" in task_text:
+        return "release-agent", "release"
+    if "qa" in task_text or "test" in task_text or "review" in task_text or "validat" in task_text:
+        return "qa-agent", "qa"
+    if "architect" in task_text or "contract" in task_text or "spec" in task_text or "design" in task_text:
+        return "architect-agent", "architecture"
+    if "release" in purpose_text or "integrat" in purpose_text:
+        return "release-agent", "release"
+    if "qa" in purpose_text or "test" in purpose_text or "review" in purpose_text or "validat" in purpose_text:
+        return "qa-agent", "qa"
+    if "architect" in purpose_text or "contract" in purpose_text or "spec" in purpose_text or "design" in purpose_text:
+        return "architect-agent", "architecture"
+    return "coding-agent", "coding"
+
+
+def _default_checks(mode: str) -> list[str]:
+    if mode == "architecture":
+        return ["hermes mad validate-contract <generated-contract>"]
+    if mode == "qa":
+        return ["hermes mad validate-report completion <completion-report>", "hermes mad validate-report qa <quality-gate-report>"]
+    if mode == "release":
+        return ["hermes mad gate <task-id> --stage done"]
+    return ["project-specific tests declared by the workstream-agent"]
+
+
+def _contract_from_plan_task(source_item: str, summary: str, task: Any, index: int, owner: str, mode: str) -> dict[str, Any]:
+    goal = _task_text(task)
+    dependencies = _task_scope(task, "dependencies") or _task_scope(task, "depends_on")
+    allowed_scope = _task_scope(task, "allowed_scope") or ["TODO: define allowed files/globs before dispatch"]
+    forbidden_scope = _task_scope(task, "forbidden_scope")
+    checks = _task_scope(task, "required_checks") or _default_checks(mode)
+    return {
+        "task_id": f"TASK-{index:03d}",
+        "source_item": source_item,
+        "owner_agent": owner,
+        "goal": goal,
+        "context": summary,
+        "mode": mode,
+        "allowed_scope": allowed_scope,
+        "forbidden_scope": forbidden_scope,
+        "dependencies": dependencies,
+        "contracts_consumed": _task_scope(task, "contracts_consumed"),
+        "contracts_produced_or_modified": _task_scope(task, "contracts_produced_or_modified"),
+        "definition_of_done": _task_scope(task, "definition_of_done") or ["TODO: define task-specific completion criteria before dispatch"],
+        "required_checks": checks,
+        "report_format": {
+            "required_fields": ["status", "changed_files", "tests_run", "blockers", "downstream_impact"],
+        },
+    }
+
+
+def cmd_decompose(args: argparse.Namespace) -> int:
+    try:
+        plan = load_yaml_file(args.feature_plan)
+        source_item = str(plan.get("source_item") or Path(args.feature_plan).stem)
+        summary = str(plan.get("summary") or "")
+        waves = plan.get("execution_waves") or []
+        if not isinstance(waves, list) or not waves:
+            raise ValueError("feature plan must contain execution_waves with tasks")
+        out_dir = Path(args.out).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        generated: list[str] = []
+        index = args.start
+        for wave in waves:
+            if not isinstance(wave, dict):
+                continue
+            purpose = str(wave.get("purpose") or "")
+            tasks = wave.get("tasks") or []
+            if not isinstance(tasks, list):
+                raise ValueError(f"wave {wave.get('wave')} tasks must be a list")
+            for task in tasks:
+                owner, mode = _wave_role_and_mode(purpose, task)
+                contract = _contract_from_plan_task(source_item, summary, task, index, owner, mode)
+                filename = f"{contract['task_id']}-{_slug(contract['goal'])}.yaml"
+                path = out_dir / filename
+                path.write_text(yaml.safe_dump(contract, sort_keys=False), encoding="utf-8")
+                generated.append(str(path))
+                index += 1
+        if not generated:
+            raise ValueError("feature plan did not contain any tasks to decompose")
+        _emit({
+            "status": "generated draft MAD task contracts",
+            "generated": generated,
+            "messages": generated,
+            "warnings": ["Review generated contracts before dispatch; TODO scope/check fields may need tightening."],
+        }, args.json)
+        return 0
+    except Exception as exc:
+        _emit({"status": "FAIL: could not decompose feature plan", "errors": [str(exc)]}, args.json)
         return 1
 
 

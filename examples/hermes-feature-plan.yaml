@@ -1,0 +1,61 @@
+source_item: FEATURE-001
+summary: Add a small example API and UI flow using MAD task contracts.
+execution_waves:
+  - wave: 1
+    purpose: architecture and contracts
+    tasks:
+      - title: Define the example API contract
+        allowed_scope:
+          - docs/contracts/example-api.yaml
+        contracts_produced_or_modified:
+          - docs/contracts/example-api.yaml
+        definition_of_done:
+          - API contract is documented
+          - Consumers are listed in the contract registry
+        required_checks:
+          - hermes mad graph validate examples/hermes-contracts.yaml --repo .
+  - wave: 2
+    purpose: coding
+    tasks:
+      - title: Implement the example API handler
+        dependencies:
+          - TASK-001
+        allowed_scope:
+          - src/example/**
+          - tests/example/**
+        contracts_consumed:
+          - docs/contracts/example-api.yaml
+        definition_of_done:
+          - Handler follows the example API contract
+          - Tests cover success and failure behavior
+        required_checks:
+          - pytest tests/example
+  - wave: 3
+    purpose: qa and release
+    tasks:
+      - title: Validate the example API implementation
+        dependencies:
+          - TASK-002
+        allowed_scope:
+          - src/example/**
+          - tests/example/**
+        required_checks:
+          - hermes mad gate <task-id> --stage integration
+      - title: Prepare release integration for the example flow
+        dependencies:
+          - TASK-003
+        allowed_scope:
+          - .agents/reports/**
+        required_checks:
+          - hermes mad gate <task-id> --stage done
+dependency_graph:
+  TASK-002:
+    - TASK-001
+  TASK-003:
+    - TASK-002
+  TASK-004:
+    - TASK-003
+risks:
+  - Generated contracts must be reviewed before dispatch.
+open_decisions:
+  - Confirm final allowed scopes for real project files.
