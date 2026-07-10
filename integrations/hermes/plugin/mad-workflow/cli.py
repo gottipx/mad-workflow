@@ -172,6 +172,14 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     p_decompose.add_argument("--start", type=int, default=1, help="First TASK number to use")
     p_decompose.add_argument("--json", action="store_true")
 
+    p_run = sub.add_parser("run", help="Kick off the full MAD workflow from a feature plan: decompose, create Kanban tasks, link deps, promote, and optionally dispatch")
+    p_run.add_argument("feature_plan", help="Path to feature plan YAML")
+    p_run.add_argument("--board", default=None, help="Kanban board slug (default: mad-workflow)")
+    p_run.add_argument("--out", default=".agents/task-contracts", help="Directory for generated task contracts")
+    p_run.add_argument("--dispatch", action="store_true", help="Run hermes kanban dispatch after creating tasks")
+    p_run.add_argument("--dry-run", action="store_true", help="Show what would be created but do not create Kanban tasks")
+    p_run.add_argument("--json", action="store_true")
+
 
 def mad_command(args: argparse.Namespace) -> None:
     """Top-level CLI handler.
@@ -210,6 +218,8 @@ def _mad_command(args: argparse.Namespace) -> int:
         return cmd_check_scope(args)
     if action == "prompt":
         return cmd_prompt(args)
+    if action == "run":
+        return cmd_run(args)
     print(f"Unknown mad action: {action}", file=sys.stderr)
     return 2
 
@@ -1230,19 +1240,49 @@ def _wave_role_and_mode(purpose: str, task: Any) -> tuple[str, str]:
 
 def _default_checks(mode: str) -> list[str]:
     if mode == "architecture":
-        return ["hermes mad validate-contract <generated-contract>"]
+        return ["hermes mad graph validate .agents/contracts.yaml --repo ."]
     if mode == "qa":
-        return ["hermes mad validate-report completion <completion-report>", "hermes mad validate-report qa <quality-gate-report>"]
+        return ["hermes mad validate-report completion <report-path>", "hermes mad validate-report qa <report-path>"]
     if mode == "release":
         return ["hermes mad gate <task-id> --stage done"]
-    return ["project-specific tests declared by the workstream-agent"]
+    return ["pytest"]
+
+
+def _default_definition_of_done(mode: str) -> list[str]:
+    defaults = {
+        "architecture": [
+            "Specification and acceptance criteria are testable and complete.",
+            "Controlled contracts are proposed, classified, and registered.",
+            "Architecture decisions are recorded where trade-offs exist.",
+            "Open decisions are documented with owners.",
+        ],
+        "coding": [
+            "Implementation satisfies the acceptance criteria within allowed scope.",
+            "Required checks pass on the reported revision.",
+            "Completion report lists changed files, checks, and downstream impact.",
+        ],
+        "qa": [
+            "Every acceptance criterion has independent evidence.",
+            "Scope, contract compatibility, and risk-relevant checks are verified.",
+            "Quality-gate report is complete with a pass/fail/blocked decision.",
+        ],
+        "release": [
+            "All dependencies are QA-approved at the same revision.",
+            "Integrated checks pass on the integration branch.",
+            "Release candidate summary, rollback statement, and PR body are ready.",
+        ],
+    }
+    return defaults.get(mode, defaults["coding"])
 
 
 def _contract_from_plan_task(source_item: str, summary: str, task: Any, index: int, owner: str, mode: str) -> dict[str, Any]:
     goal = _task_text(task)
     dependencies = _task_scope(task, "dependencies") or _task_scope(task, "depends_on")
-    allowed_scope = _task_scope(task, "allowed_scope") or ["TODO: define allowed files/globs before dispatch"]
+    allowed_scope = _task_scope(task, "allowed_scope") or [".agents/**", "docs/**"] if mode in {"architecture", "qa", "release"} else _task_scope(task, "allowed_scope") or ["src/**", "tests/**"]
     forbidden_scope = _task_scope(task, "forbidden_scope")
+    dod = _task_scope(task, "definition_of_done")
+    if not dod:
+        dod = _default_definition_of_done(mode)
     checks = _task_scope(task, "required_checks") or _default_checks(mode)
     return {
         "schema_version": "mad.task-contract/v1",
@@ -1257,7 +1297,7 @@ def _contract_from_plan_task(source_item: str, summary: str, task: Any, index: i
         "dependencies": dependencies,
         "contracts_consumed": _task_scope(task, "contracts_consumed"),
         "contracts_produced_or_modified": _task_scope(task, "contracts_produced_or_modified"),
-        "definition_of_done": _task_scope(task, "definition_of_done") or ["TODO: define task-specific completion criteria before dispatch"],
+        "definition_of_done": dod,
         "required_checks": checks,
         "report_format": {
             "schema": "templates/completion-report.yaml",
@@ -1304,6 +1344,184 @@ def cmd_decompose(args: argparse.Namespace) -> int:
         return 0
     except Exception as exc:
         _emit({"status": "FAIL: could not decompose feature plan", "errors": [str(exc)]}, args.json)
+        return 1
+
+def _parse_dep_ids(deps: list[Any]) -> list[str]:
+    """Extract task IDs from dependency entries (plain strings or dicts)."""
+    ids: list[str] = []
+    for d in deps or []:
+        if isinstance(d, str):
+            ids.append(d.strip())
+        elif isinstance(d, dict):
+            ids.append(str(d.get("task_id") or d.get("id") or "").strip())
+    return [i for i in ids if i]
+
+
+def _build_wave_contracts(feature_plan: str, out_dir: Path, start: int) -> tuple[list[dict[str, Any]], dict[int, list[int]]]:
+    """Decompose a feature plan and return contracts + wave→contract indices mapping."""
+    plan = load_yaml_file(feature_plan)
+    source_item = str(plan.get("source_item") or Path(feature_plan).stem)
+    summary = str(plan.get("summary") or "")
+    waves = plan.get("execution_waves") or plan.get("waves") or []
+    if not isinstance(waves, list) or not waves:
+        raise ValueError("feature plan must contain execution_waves or waves with tasks")
+
+    contracts: list[dict[str, Any]] = []
+    wave_map: dict[int, list[int]] = {}
+    index = start
+    for wave_idx, wave in enumerate(waves):
+        if not isinstance(wave, dict):
+            continue
+        purpose = str(wave.get("purpose") or "")
+        tasks = wave.get("tasks") or []
+        if not isinstance(tasks, list):
+            raise ValueError(f"wave {wave.get('wave')} tasks must be a list")
+        wave_indices: list[int] = []
+        for task in tasks:
+            owner, mode = _wave_role_and_mode(purpose, task)
+            contract = _contract_from_plan_task(source_item, summary, task, index, owner, mode)
+            contracts.append(contract)
+            wave_indices.append(len(contracts) - 1)
+            index += 1
+        if wave_indices:
+            wave_map[wave_idx] = wave_indices
+    return contracts, wave_map
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """hermes mad run — kick off the full MAD workflow from a feature plan."""
+    try:
+        from hermes_cli import kanban_db as kb
+        board = args.board or "mad-workflow"
+        out_dir = Path(args.out).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Decompose the feature plan into contracts
+        contracts, wave_map = _build_wave_contracts(args.feature_plan, out_dir, 1)
+        if not contracts:
+            raise ValueError("feature plan did not produce any tasks")
+
+        # Write contracts to disk
+        written: list[str] = []
+        for contract in contracts:
+            filename = f"{contract['task_id']}-{_slug(contract['goal'])}.yaml"
+            path = out_dir / filename
+            path.write_text(yaml.safe_dump(contract, sort_keys=False), encoding="utf-8")
+            written.append(str(path))
+
+        # 2. Validate each contract
+        contract_errors: list[str] = []
+        contract_warnings: list[str] = []
+        for i, contract in enumerate(contracts):
+            errs, warns = validate_contract(contract)
+            if errs:
+                contract_errors.extend(f"{contract['task_id']}: {e}" for e in errs)
+            else:
+                contract_warnings.extend(f"{contract['task_id']}: {w}" for w in warns)
+        if contract_errors:
+            _emit({
+                "status": "FAIL: one or more generated contracts are invalid",
+                "contracts": written,
+                "errors": contract_errors,
+                "messages": ["Draft contracts written to disk but contain validation errors. Review and fix before dispatch."],
+            }, args.json)
+            return 1
+
+        if args.dry_run:
+            _emit({
+                "status": "dry-run: would create Kanban tasks",
+                "contracts": written,
+                "tasks": [{c["task_id"]: {"owner": c["owner_agent"], "goal": c["goal"], "mode": c["mode"]}} for c in contracts],
+                "wave_map": {str(k): [contracts[i]["task_id"] for i in v] for k, v in wave_map.items()},
+                "messages": [f"contracts written: {len(written)}"] + written,
+            }, args.json)
+            return 0
+
+        # 3. Create Kanban tasks
+        task_map: dict[str, str] = {}  # TASK-XXX -> kanban_task_id
+        created_ids: list[str] = []
+        with kb.connect(board=board) as conn:
+            for contract in contracts:
+                owner = contract["owner_agent"]
+                mode = str(contract.get("mode") or "coding")
+                assignee = OWNER_TO_PROFILE[owner]
+                ws_kind, ws_path = _workspace_parts(None, mode)
+                branch = _default_branch(contract) if ws_kind == "worktree" else None
+                parents: list[str] = []
+                skills = ROLE_SKILLS.get(owner, [])
+
+                task_id = kb.create_task(
+                    conn,
+                    title=f"{contract['task_id']}: {contract['goal']}",
+                    body=contract_body(contract),
+                    assignee=assignee,
+                    workspace_kind=ws_kind,
+                    workspace_path=ws_path,
+                    branch_name=branch,
+                    priority=0,
+                    parents=parents,
+                    created_by="mad-workflow",
+                    idempotency_key=f"mad:{contract.get('source_item')}:{contract.get('task_id')}",
+                    skills=skills,
+                    board=board,
+                )
+                task_map[contract["task_id"]] = task_id
+                created_ids.append(task_id)
+
+        # 4. Link parent→child dependencies
+        links_created = 0
+        with kb.connect(board=board) as conn:
+            for contract in contracts:
+                child_tid = task_map.get(contract["task_id"])
+                if not child_tid:
+                    continue
+                for dep_id in _parse_dep_ids(contract.get("dependencies") or []):
+                    parent_tid = task_map.get(dep_id)
+                    if parent_tid and parent_tid != child_tid:
+                        kb.link_tasks(conn, parent_tid, child_tid)
+                        links_created += 1
+
+        # 5. Promote first-wave tasks to Ready
+        promoted = 0
+        if wave_map and 0 in wave_map:
+            with kb.connect(board=board) as conn:
+                for idx in wave_map[0]:
+                    tid = task_map.get(contracts[idx]["task_id"])
+                    if tid:
+                        kb.promote_task(conn, tid, actor="mad-workflow")
+                        promoted += 1
+
+        # 6. Dispatch if requested
+        dispatch_result = None
+        if args.dispatch:
+            proc = subprocess.run(
+                ["hermes", "kanban", "dispatch", "--board", board, "--max", str(len(created_ids) + 2), "--json"],
+                text=True, capture_output=True
+            )
+            try:
+                dispatch_result = json.loads(proc.stdout) if proc.stdout.strip() else {}
+            except json.JSONDecodeError:
+                dispatch_result = {"output": proc.stdout[:500]}
+
+        _emit({
+            "status": "MAD run complete",
+            "contracts": written,
+            "tasks_created": len(created_ids),
+            "task_ids": created_ids,
+            "links_created": links_created,
+            "promoted": promoted,
+            "dispatch": dispatch_result,
+            "messages": [
+                f"board: {board}",
+                f"contracts: {len(written)}",
+                f"tasks created: {len(created_ids)}",
+                f"dependency links: {links_created}",
+                f"first-wave tasks promoted: {promoted}",
+            ],
+        }, args.json)
+        return 0
+    except Exception as exc:
+        _emit({"status": "FAIL: could not complete MAD run", "errors": [str(exc)]}, args.json)
         return 1
 
 
