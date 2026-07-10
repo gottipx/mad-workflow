@@ -180,6 +180,12 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     p_run.add_argument("--dry-run", action="store_true", help="Show what would be created but do not create Kanban tasks")
     p_run.add_argument("--json", action="store_true")
 
+    p_orch = sub.add_parser("orchestrate", help="Scan the MAD board for completed tasks and advance the next wave")
+    p_orch.add_argument("--board", default=None, help="Kanban board slug (default: mad-workflow)")
+    p_orch.add_argument("--reports-dir", default=".agents/reports", help="Directory containing MAD reports")
+    p_orch.add_argument("--dispatch", action="store_true", help="Run hermes kanban dispatch after advancing tasks")
+    p_orch.add_argument("--dry-run", action="store_true", help="Show what would be advanced but do not change board state")
+    p_orch.add_argument("--json", action="store_true")
 
 def mad_command(args: argparse.Namespace) -> None:
     """Top-level CLI handler.
@@ -220,6 +226,8 @@ def _mad_command(args: argparse.Namespace) -> int:
         return cmd_prompt(args)
     if action == "run":
         return cmd_run(args)
+    if action == "orchestrate":
+        return cmd_orchestrate(args)
     print(f"Unknown mad action: {action}", file=sys.stderr)
     return 2
 
@@ -1522,6 +1530,157 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 0
     except Exception as exc:
         _emit({"status": "FAIL: could not complete MAD run", "errors": [str(exc)]}, args.json)
+        return 1
+
+# Compiled regexes for extracting contract info from task bodies
+_TASK_ID_RE = re.compile(r"task_id:\s*['\"]?([A-Za-z0-9_.:-]+)")
+_TASK_FB_RE = re.compile(r"TASK-\d+")
+_OWNER_RE = re.compile(r"owner_agent:\s*['\"]?([a-z-]+)")
+
+
+def _contract_id_from_task(task: Any) -> str | None:
+    """Extract TASK-XXX from a task body, falling back to idempotency key."""
+    if hasattr(task, "body") and task.body:
+        m = _TASK_ID_RE.search(task.body)
+        if m:
+            return m.group(1)
+    if hasattr(task, "idempotency_key") and task.idempotency_key:
+        m = _TASK_FB_RE.search(task.idempotency_key)
+        if m:
+            return m.group(0)
+    return None
+
+
+def _contract_owner_from_task(task: Any) -> str | None:
+    """Extract owner_agent from a task body."""
+    if hasattr(task, "body") and task.body:
+        m = _OWNER_RE.search(task.body)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _report_data(reports_dir: Path, task_id: str, suffix: str) -> dict[str, Any] | None:
+    """Read a report YAML if it exists."""
+    path = reports_dir / f"{task_id}-{suffix}.yaml"
+    if not path.exists():
+        return None
+    try:
+        return load_yaml_file(path)
+    except Exception:
+        return None
+
+
+def cmd_orchestrate(args: argparse.Namespace) -> int:
+    """hermes mad orchestrate -- advance the MAD board by promoting ready dependent tasks."""
+    try:
+        from hermes_cli import kanban_db as kb
+        board = args.board or "mad-workflow"
+        reports_dir = Path(args.reports_dir).expanduser()
+
+        with kb.connect(board=board) as conn:
+            all_tasks = {t.id: t for t in kb.list_tasks(conn, include_archived=False, limit=200)}
+            if not all_tasks:
+                _emit({"status": "no tasks found on board", "board": board}, args.json)
+                return 0
+
+            kanban_to_contract: dict[str, str] = {}
+            done_contract_set: set[str] = set()
+
+            for tid, t in all_tasks.items():
+                cid = _contract_id_from_task(t)
+                if cid:
+                    kanban_to_contract[tid] = cid
+                    if t.status == "done":
+                        done_contract_set.add(cid)
+
+            promoted: list[str] = []
+            messages: list[str] = []
+
+            for tid, t in all_tasks.items():
+                if t.status != "todo":
+                    continue
+                cid = kanban_to_contract.get(tid)
+                if not cid:
+                    continue
+
+                parents = kb.parent_ids(conn, tid)
+                if not parents:
+                    continue
+
+                all_parents_done = all(
+                    all_tasks[pid].status == "done"
+                    for pid in parents
+                    if pid in all_tasks
+                )
+                if not all_parents_done:
+                    continue
+
+                owner = _contract_owner_from_task(t) or ""
+                promote = False
+                note = ""
+
+                if owner == "qa-agent":
+                    missing = []
+                    for pid in parents:
+                        pcid = kanban_to_contract.get(pid, "")
+                        if pcid and not _report_data(reports_dir, pcid, "completion"):
+                            missing.append(pcid)
+                    if not missing:
+                        promote = True
+                        note = "coding completion reports found"
+                    else:
+                        messages.append(f"SKIPPED {cid} ({owner}): waiting for completion reports: {', '.join(missing)}")
+                elif owner == "release-agent":
+                    all_passed = True
+                    for pid in parents:
+                        pcid = kanban_to_contract.get(pid, "")
+                        qa = _report_data(reports_dir, pcid, "quality-gate")
+                        if not qa:
+                            all_passed = False
+                            messages.append(f"SKIPPED {cid} ({owner}): missing QA report for {pcid}")
+                            break
+                        decision = str(qa.get("decision", "")).strip()
+                        if decision not in ("pass", "pass_with_notes"):
+                            all_passed = False
+                            messages.append(f"SKIPPED {cid} ({owner}): QA decision is {decision!r} for {pcid}")
+                            break
+                    if all_passed:
+                        promote = True
+                        note = "all QA dependencies approved"
+                else:
+                    promote = True
+                    note = "all dependencies completed"
+
+                if promote:
+                    if args.dry_run:
+                        messages.append(f"WOULD promote {cid} ({owner}): {note}")
+                        promoted.append(cid)
+                    else:
+                        ok, reason = kb.promote_task(conn, tid, actor="mad-workflow")
+                        if ok:
+                            messages.append(f"promoted {cid} ({owner}): {note}")
+                            promoted.append(cid)
+                        else:
+                            messages.append(f"BLOCKED {cid}: {reason}")
+
+            if args.dispatch and (promoted or not args.dry_run):
+                subprocess.run(
+                    ["hermes", "kanban", "dispatch", "--board", board, "--max",
+                     str(max(len(promoted) + 1, 3))],
+                    text=True, capture_output=True,
+                )
+
+        _emit({
+            "status": "orchestration complete",
+            "board": board,
+            "promoted": promoted,
+            "done_contracts": sorted(done_contract_set),
+            "messages": messages,
+        }, args.json)
+        return 0
+    except Exception as exc:
+        _emit({"status": "FAIL: could not orchestrate board", "errors": [str(exc)]}, args.json)
         return 1
 
 
