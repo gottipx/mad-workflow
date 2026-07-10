@@ -1,0 +1,29 @@
+task_id: TASK-001
+source_item: FEATURE-001
+owner_agent: coding-agent
+goal: Implement a bounded example change from an explicit MAD contract
+context: Example contract for testing the Hermes MAD integration.
+mode: coding
+allowed_scope:
+  - src/example/**
+  - tests/example/**
+forbidden_scope:
+  - src/billing/**
+  - database/migrations/**
+  - secrets/**
+dependencies: []
+contracts_consumed: []
+contracts_produced_or_modified: []
+definition_of_done:
+  - Example behavior is implemented within allowed scope
+  - Tests cover the changed behavior
+  - Completion report lists changed files and checks run
+required_checks:
+  - pytest tests/example
+report_format:
+  required_fields:
+    - status
+    - changed_files
+    - tests_run
+    - blockers
+    - downstream_impact

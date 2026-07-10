@@ -107,6 +107,18 @@ repo/
 5. QA gates decide readiness, not agent confidence.
 6. Human review remains required for final merge or policy exceptions.
 
+## Hermes Agent quickstart
+
+This repo includes a thin Hermes integration that maps MAD onto Hermes Kanban, profiles, skills, worktrees, and GitHub-capable workers.
+
+```bash
+./integrations/hermes/install.sh --profiles --switch
+hermes mad --help
+hermes mad validate-contract examples/hermes-task-contract.yaml
+```
+
+See [`docs/hermes-quickstart.md`](./docs/hermes-quickstart.md) for installation, validation, task creation, and scope-gate commands.
+
 ## External skills
 
 If available, the workstream-agent or architect-agent may reuse external skills such as `to-spec` and `to-tickets`. This repo contains fallback rules so it remains usable without those skills.

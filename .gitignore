@@ -8,6 +8,10 @@ dist/
 build/
 coverage/
 
+# Python cache files
+__pycache__/
+*.py[cod]
+
 # Logs
 *.log
 npm-debug.log*

@@ -1,0 +1,4 @@
+name: mad-workflow
+version: "0.1.0"
+description: "Hermes-native Multi-Agent Delivery Workflow helpers: task contracts, Kanban creation, profile presets, and scope gates."
+
