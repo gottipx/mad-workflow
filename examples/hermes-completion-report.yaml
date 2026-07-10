@@ -1,0 +1,16 @@
+task_id: TASK-001
+owner_agent: coding-agent
+status: completed
+branch: agent/feature-001/task-001
+workspace: /tmp/example-worktree
+changed_files:
+  - src/example/a.txt
+contracts_changed: []
+tests_run:
+  - pytest tests/example
+test_result: passed
+assumptions: []
+blockers: []
+downstream_impact: []
+recommended_next_actions:
+  - Request QA gate review

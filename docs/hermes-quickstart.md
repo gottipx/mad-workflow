@@ -85,6 +85,36 @@ hermes mad check-scope examples/hermes-task-contract.yaml --repo . --base origin
 
 The check fails if changed files are outside `allowed_scope` or inside `forbidden_scope`.
 
+## Validate reports and gates
+
+MAD reports are plain YAML. Validate them before moving work forward:
+
+```bash
+hermes mad validate-report completion examples/hermes-completion-report.yaml \
+  --contract examples/hermes-task-contract.yaml
+
+hermes mad validate-report qa examples/hermes-quality-gate-report.yaml \
+  --contract examples/hermes-task-contract.yaml
+
+hermes mad validate-report impact examples/hermes-impact-report.yaml \
+  --contract examples/hermes-task-contract.yaml
+```
+
+Evaluate Kanban task readiness gates:
+
+```bash
+hermes mad gate <kanban-task-id> --stage review \
+  --contract examples/hermes-task-contract.yaml \
+  --completion examples/hermes-completion-report.yaml
+
+hermes mad gate <kanban-task-id> --stage integration \
+  --contract examples/hermes-task-contract.yaml \
+  --completion examples/hermes-completion-report.yaml \
+  --qa examples/hermes-quality-gate-report.yaml
+```
+
+Use `--block-on-fail` when you want a failed gate to block the Kanban task with the gate errors.
+
 ## Render a worker prompt
 
 ```bash

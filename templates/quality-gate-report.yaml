@@ -1,5 +1,7 @@
+task_id: ""
 target_branch: ""
 decision: pass # pass | pass_with_notes | fail | blocked
+evidence: []
 checks_run: []
 failed_checks: []
 contract_findings: []

@@ -1,0 +1,10 @@
+source_task: TASK-001
+changed_files:
+  - src/example/a.txt
+changed_artifacts: []
+change_type: internal # internal | additive | behavioral | breaking | unclear
+impacted_tasks: []
+impacted_contracts: []
+required_revalidation: []
+risk_level: low # low | medium | high
+notes: []

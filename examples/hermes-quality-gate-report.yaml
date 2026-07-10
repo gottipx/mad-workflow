@@ -1,0 +1,15 @@
+task_id: TASK-001
+target_branch: agent/feature-001/task-001
+decision: pass
+evidence:
+  - Scope check passed
+  - Required tests passed
+checks_run:
+  - pytest tests/example
+failed_checks: []
+contract_findings: []
+security_findings: []
+accessibility_findings: []
+performance_findings: []
+required_fixes: []
+follow_up_recommendations: []
