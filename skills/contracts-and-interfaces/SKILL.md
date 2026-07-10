@@ -1,48 +1,71 @@
 ---
 name: contracts-and-interfaces
-description: "apply contract-first delivery for shared interfaces such as apis, schemas, events, commands, ui props, client models, platform contracts, and integration boundaries. use when defining, changing, consuming, or validating shared contracts and when classifying compatibility or breaking changes."
+description: "Define, review, evolve, and register shared MAD contracts such as APIs, schemas, events, commands, configuration, persistence shapes, UI interfaces, migrations, and infrastructure boundaries. Use whenever work consumes or changes behavior shared across tasks or systems."
 ---
 
 # Contracts and Interfaces
 
-Use this skill when work crosses a boundary between components, services, clients, data models, platforms, or agents.
+A contract is any externally consumed shape or behavior. Schema stability alone does not guarantee behavioral compatibility.
 
-## Contract types
+## Contract discovery
 
-- API contract
-- data or schema contract
-- event or message contract
-- command or job contract
-- UI component contract
-- client DTO or model contract
-- configuration or infrastructure contract
+Before proposing change:
 
-## Rules
+1. Identify the authoritative artifact and owner.
+2. Find producers, direct consumers, generated derivatives, tests, docs, migrations, and deployment/config dependencies.
+3. Record current invariants, failure semantics, versioning/deprecation policy, and compatibility expectations.
+4. Verify `.agents/contracts.yaml` matches repository evidence; report drift.
 
-1. Define or confirm the contract before coding starts.
-2. Prefer additive changes.
-3. Mark breaking changes explicitly.
-4. Identify known consumers.
-5. Add or update contract tests when behavior changes.
-6. Do not silently change a shared contract from a coding task.
+Completion criterion: ownership, current behavior, and affected consumers are known well enough to classify a change.
+
+## Proposal procedure
+
+1. State the requirement and why the current contract cannot satisfy it.
+2. Prefer an existing contract or additive extension over a parallel interface.
+3. Define shape, semantics, invariants, validation, errors, authorization, idempotency/concurrency, defaults, and lifecycle where relevant.
+4. Declare lifecycle metadata:
+
+```yaml
+status: proposal | approved | deprecated
+owner: ""
+change_type: internal | additive | behavioral | breaking | unclear
+producers: []
+consumers: []
+required_revalidation: []
+migration_or_versioning: ""
+```
+
+5. Compare at least two viable designs for consequential/hard-to-reverse contracts.
+6. Define contract tests or observable conformance evidence.
+7. Define rollout, coexistence, migration, deprecation, and rollback for non-internal changes.
+8. Obtain required approval before implementation consumes the proposal as authoritative.
+9. Update the registry, examples, generated outputs, and documentation from the same source.
+
+Completion criterion: the approved artifact is unambiguous, testable, owned, compatible or migration-safe, and registered.
 
 ## Compatibility classification
 
-```yaml
-change_type: additive | behavioral | breaking | unclear
-consumers_impacted: []
-required_revalidation: []
-```
+- `internal`: no external or cross-task consumer
+- `additive`: existing valid consumers retain shape and behavior
+- `behavioral`: shape may remain stable but meaning, defaults, errors, ordering, timing, permissions, or side effects change
+- `breaking`: a valid existing consumer can fail or become incorrect
+- `unclear`: evidence is insufficient; treat as blocked until resolved
 
-## Breaking-change handling
+Breaking and unclear changes require explicit authority and an impact/migration plan. Prefer expand-and-contract:
 
-Use expand-and-contract when possible:
+1. add compatible producer behavior
+2. migrate and verify consumers
+3. enforce the new contract
+4. remove old behavior only after evidence
 
-1. Add new behavior while keeping old behavior.
-2. Migrate consumers.
-3. Validate all consumers.
-4. Remove old behavior only after approval.
+## Review gate
 
-## Output
+Reject a contract when ownership is absent, semantics are vague, consumers are unknown, compatibility is asserted without evidence, error/authorization behavior is missing, generated artifacts can drift, migration/rollback is unsafe, or acceptance evidence cannot distinguish conformance.
 
-Return the changed contract, compatibility classification, impacted consumers, and required revalidation tasks.
+## Controlled change rule
+
+Coding agents may modify a contract only when the task contract explicitly names it as produced/modified and scope permits its authoritative source. Otherwise stop before editing and return a blocker requesting ownership/contract amendment.
+
+## Handoff
+
+Provide authoritative path, lifecycle status, owner, compatibility classification, producers/consumers, tests/evidence, registry update, migration/rollback, unresolved decisions, and required downstream revalidation.
