@@ -180,12 +180,27 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     p_run.add_argument("--dry-run", action="store_true", help="Show what would be created but do not create Kanban tasks")
     p_run.add_argument("--json", action="store_true")
 
+
+    p_dispatch = sub.add_parser("dispatch", help="Gate-checked dispatch: validate MAD readiness before spawning workers")
+    p_dispatch.add_argument("--board", default=None, help="Kanban board slug (default: mad-workflow)")
+    p_dispatch.add_argument("--reports-dir", default=".agents/reports", help="Directory containing MAD reports")
+    p_dispatch.add_argument("--dry-run", action="store_true", help="Show what would be dispatched without spawning")
+    p_dispatch.add_argument("--max", type=int, default=10, help="Max workers to spawn")
+    p_dispatch.add_argument("--json", action="store_true")
     p_orch = sub.add_parser("orchestrate", help="Scan the MAD board for completed tasks and advance the next wave")
     p_orch.add_argument("--board", default=None, help="Kanban board slug (default: mad-workflow)")
     p_orch.add_argument("--reports-dir", default=".agents/reports", help="Directory containing MAD reports")
     p_orch.add_argument("--dispatch", action="store_true", help="Run hermes kanban dispatch after advancing tasks")
     p_orch.add_argument("--dry-run", action="store_true", help="Show what would be advanced but do not change board state")
+    p_orch.add_argument("--watch", action="store_true", help="Run continuously, re-scanning every 60 seconds")
+    p_orch.add_argument("--interval", type=int, default=60, help="Seconds between watch ticks (default: 60)")
     p_orch.add_argument("--json", action="store_true")
+    p_int = sub.add_parser("integrate", help="Prepare a release candidate from QA-approved task revisions")
+    p_int.add_argument("--board", default=None, help="Kanban board slug (default: mad-workflow)")
+    p_int.add_argument("--reports-dir", default=".agents/reports", help="Directory containing MAD reports")
+    p_int.add_argument("--out", default=None, help="Write release candidate YAML to this path")
+    p_int.add_argument("--dry-run", action="store_true", help="Show what would be integrated without changing anything")
+    p_int.add_argument("--json", action="store_true")
 
 def mad_command(args: argparse.Namespace) -> None:
     """Top-level CLI handler.
@@ -224,6 +239,10 @@ def _mad_command(args: argparse.Namespace) -> int:
         return cmd_check_scope(args)
     if action == "prompt":
         return cmd_prompt(args)
+    if action == "dispatch":
+        return cmd_dispatch(args)
+    if action == "integrate":
+        return cmd_integrate(args)
     if action == "run":
         return cmd_run(args)
     if action == "orchestrate":
@@ -1573,6 +1592,23 @@ def _report_data(reports_dir: Path, task_id: str, suffix: str) -> dict[str, Any]
 
 def cmd_orchestrate(args: argparse.Namespace) -> int:
     """hermes mad orchestrate -- advance the MAD board by promoting ready dependent tasks."""
+    if getattr(args, "watch", False):
+        import time as _time
+        interval = getattr(args, "interval", 60)
+        print(f"MAD orchestrate watch started (interval={interval}s). Press Ctrl+C to stop.")
+        try:
+            while True:
+                _time.sleep(interval)
+                # Re-parse to get fresh args each tick
+                ns = argparse.Namespace(**{k: getattr(args, k) for k in vars(args)})
+                ns.watch = False  # prevent infinite nesting
+                rc = cmd_orchestrate(ns)
+                if rc != 0:
+                    print(f"orchestrate tick exited with {rc}", file=sys.stderr)
+        except KeyboardInterrupt:
+            print()
+            print("MAD orchestrate watch stopped.")
+        return 0
     try:
         from hermes_cli import kanban_db as kb
         board = args.board or "mad-workflow"
@@ -1681,6 +1717,206 @@ def cmd_orchestrate(args: argparse.Namespace) -> int:
         return 0
     except Exception as exc:
         _emit({"status": "FAIL: could not orchestrate board", "errors": [str(exc)]}, args.json)
+        return 1
+
+
+def cmd_dispatch(args: argparse.Namespace) -> int:
+    """hermes mad dispatch -- gate-checked dispatch that validates MAD readiness."""
+    try:
+        from hermes_cli import kanban_db as kb
+        board = args.board or "mad-workflow"
+        reports_dir = Path(args.reports_dir).expanduser()
+
+        with kb.connect(board=board) as conn:
+            all_tasks = {t.id: t for t in kb.list_tasks(conn, include_archived=False, limit=200)}
+            ready_tasks = [t for t in all_tasks.values() if t.status == "ready"]
+
+            if not ready_tasks:
+                _emit({"status": "no ready tasks to dispatch", "board": board}, args.json)
+                return 0
+
+            blocked: list[str] = []
+            dispatchable: list[str] = []
+            messages: list[str] = []
+
+            for t in ready_tasks[:args.max]:
+                cid = _contract_id_from_task(t)
+                owner = _contract_owner_from_task(t) or ""
+                tid = t.id
+                ok = True
+                reason = ""
+
+                if owner == "qa-agent":
+                    # QA needs completion reports from parents
+                    parents = kb.parent_ids(conn, tid)
+                    for pid in parents:
+                        pcid = _contract_id_from_task(all_tasks.get(pid))
+                        if pcid and not _report_data(reports_dir, pcid, "completion"):
+                            ok = False
+                            reason = f"missing completion report for {pcid}"
+                            break
+                elif owner == "release-agent":
+                    # Release needs QA pass on all parents
+                    parents = kb.parent_ids(conn, tid)
+                    for pid in parents:
+                        pcid = _contract_id_from_task(all_tasks.get(pid))
+                        qa = _report_data(reports_dir, pcid, "quality-gate") if pcid else None
+                        decision = str(qa.get("decision", "")).strip() if qa else ""
+                        if decision not in ("pass", "pass_with_notes"):
+                            ok = False
+                            reason = f"QA not passed for {pcid} (decision: {decision or 'missing'})"
+                            break
+
+                if ok:
+                    dispatchable.append(tid)
+                else:
+                    blocked.append(tid)
+                    messages.append(f"BLOCKED {cid or tid} ({owner}): {reason}")
+
+            if args.dry_run:
+                messages.append(f"Would dispatch {len(dispatchable)} tasks: {dispatchable}")
+                messages.append(f"Would block {len(blocked)} tasks")
+            elif dispatchable:
+                for tid in blocked:
+                    kb.block_task(conn, tid, reason="MAD dispatch gate blocked", kind="needs_input")
+                subprocess.run(
+                    ["hermes", "kanban", "dispatch", "--board", board, "--max", str(len(dispatchable))],
+                    text=True, capture_output=True,
+                )
+                messages.append(f"Dispatched {len(dispatchable)} tasks")
+
+        _emit({
+            "status": "dispatch gate check complete",
+            "dispatchable": dispatchable,
+            "blocked": blocked,
+            "messages": messages,
+        }, args.json)
+        return 0
+    except Exception as exc:
+        _emit({"status": "FAIL: could not gate-check dispatch", "errors": [str(exc)]}, args.json)
+        return 1
+
+
+
+def cmd_integrate(args: argparse.Namespace) -> int:
+    """hermes mad integrate -- prepare release candidate from QA-approved revisions."""
+    try:
+        from hermes_cli import kanban_db as kb
+        board = args.board or "mad-workflow"
+        reports_dir = Path(args.reports_dir).expanduser()
+
+        with kb.connect(board=board) as conn:
+            all_tasks = {t.id: t for t in kb.list_tasks(conn, include_archived=False, limit=200)}
+            done_tasks = {t.id: t for t in all_tasks.values() if t.status == "done"}
+            ready_tasks = {t.id: t for t in all_tasks.values() if t.status == "ready"}
+
+            if not done_tasks and not ready_tasks:
+                _emit({"status": "no completed or ready tasks found", "board": board}, args.json)
+                return 0
+
+            verified: list[dict[str, Any]] = []
+            missing_qa: list[str] = []
+            messages: list[str] = []
+
+            for tid, t in {**done_tasks, **ready_tasks}.items():
+                cid = _contract_id_from_task(t)
+                owner = _contract_owner_from_task(t) or ""
+                if not cid:
+                    continue
+
+                # Only consider tasks that contribute to a release (not architecture/QA meta tasks)
+                if owner in ("architect-agent", "workstream-agent"):
+                    continue
+
+                qa_report = _report_data(reports_dir, cid, "quality-gate")
+                completion = _report_data(reports_dir, cid, "completion")
+
+                if qa_report:
+                    decision = str(qa_report.get("decision", "")).strip()
+                    if decision in ("pass", "pass_with_notes"):
+                        verified.append({
+                            "task_id": cid,
+                            "kanban_id": tid,
+                            "owner": owner,
+                            "branch": (completion or {}).get("branch", ""),
+                            "revision": (completion or {}).get("revision", ""),
+                            "qa_decision": decision,
+                        })
+                    else:
+                        messages.append(f"SKIPPED {cid}: QA decision is {decision!r}")
+                else:
+                    missing_qa.append(cid)
+
+            if missing_qa:
+                messages.append(f"Missing QA reports: {', '.join(missing_qa)}")
+
+            if not verified:
+                _emit({
+                    "status": "no QA-verified tasks ready for integration",
+                    "verified": [],
+                    "missing_qa": missing_qa,
+                    "messages": messages,
+                }, args.json)
+                return 0
+
+            # Build release candidate
+            source_item = ""
+            for t in all_tasks.values():
+                cid = _contract_id_from_task(t)
+                if cid:
+                    # Extract source item from first task
+                    m = re.search(r"source_item:\s*['\"]?([A-Za-z0-9_.-]+)", t.body or "")
+                    if m:
+                        source_item = m.group(1)
+                        break
+
+            candidate = {
+                "schema_version": "mad.release-candidate/v1",
+                "report_id": f"{source_item or 'FEATURE'}-release-candidate-001",
+                "source_item": source_item or "MAD_WORKFLOW",
+                "integration_branch": f"integration/{source_item or 'mad-workflow'}",
+                "base_revision": "",
+                "candidate_revision": "",
+                "included_tasks": [v["task_id"] for v in verified],
+                "included_revisions": [v["revision"] for v in verified if v.get("revision")],
+                "completion_reports": [f".agents/reports/{v['task_id']}-completion.yaml" for v in verified],
+                "qa_reports": [f".agents/reports/{v['task_id']}-quality-gate.yaml" for v in verified],
+                "contracts_changed": [],
+                "impact_and_revalidation": [],
+                "checks_run": [],
+                "failed_checks": [],
+                "residual_risks": [],
+                "follow_ups": [],
+                "rollout_plan": "",
+                "health_signals_and_abort_thresholds": [],
+                "rollback_plan": "Revert the integration commit.",
+                "irreversible_steps": [],
+                "human_approval_required": True,
+                "human_approval_reference": "",
+            }
+
+            messages.append(f"Verified tasks for integration: {len(verified)}")
+            for v in verified:
+                messages.append(f"  {v['task_id']} ({v['owner']}): {v['qa_decision']}")
+
+            if args.out:
+                out = Path(args.out).expanduser()
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
+                messages.append(f"Release candidate written to {out}")
+
+            if args.dry_run:
+                messages.append("Dry-run: no changes made.")
+
+            _emit({
+                "status": "release candidate prepared",
+                "verified_count": len(verified),
+                "missing_qa": missing_qa,
+                "messages": messages,
+            }, args.json)
+            return 0
+    except Exception as exc:
+        _emit({"status": "FAIL: could not prepare release candidate", "errors": [str(exc)]}, args.json)
         return 1
 
 
