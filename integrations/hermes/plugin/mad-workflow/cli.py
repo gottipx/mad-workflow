@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -56,12 +57,13 @@ ROLE_SKILLS = {
 }
 
 REQUIRED_FIELDS = [
-    "task_id", "source_item", "owner_agent", "goal", "mode",
+    "task_id", "source_item", "owner_agent", "goal", "context", "mode",
     "allowed_scope", "forbidden_scope", "dependencies", "contracts_consumed",
     "contracts_produced_or_modified", "definition_of_done", "required_checks",
+    "report_format",
 ]
 
-VALID_MODES = {"architecture", "coding", "qa", "release", "revalidation", "planning"}
+VALID_MODES = {"architecture", "coding", "backend", "frontend", "mobile", "data", "infra", "qa", "release", "revalidation", "planning"}
 
 
 def setup_cli(parser: argparse.ArgumentParser) -> None:
@@ -246,19 +248,50 @@ def load_contract(path: str | Path) -> dict[str, Any]:
     return data
 
 
+PLACEHOLDER_RE = re.compile(r"^(?:todo|tbd|unset|<[^>]+>|\.\.\.)$", re.IGNORECASE)
+
+
+def _is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        text = value.strip()
+        return not text or bool(PLACEHOLDER_RE.match(text))
+    if isinstance(value, list):
+        return not value
+    if isinstance(value, dict):
+        return not value
+    return False
+
+
+def _contains_placeholder(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(PLACEHOLDER_RE.match(value.strip())) or "TODO" in value or "TBD" in value
+    if isinstance(value, list):
+        return any(_contains_placeholder(v) for v in value)
+    if isinstance(value, dict):
+        return any(_contains_placeholder(v) for v in value.values())
+    return False
+
+
 def validate_contract(data: dict[str, Any]) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     for field in REQUIRED_FIELDS:
         if field not in data:
             errors.append(f"missing required field: {field}")
+        elif field in {"task_id", "source_item", "owner_agent", "goal", "context", "mode"} and _is_blank(data.get(field)):
+            errors.append(f"{field} must not be empty or a placeholder")
+    if _contains_placeholder(data):
+        errors.append("contract contains unresolved TODO/TBD/placeholder values")
     owner = str(data.get("owner_agent", "")).strip()
     if owner and owner not in OWNER_TO_PROFILE:
         errors.append(f"owner_agent must be one of {sorted(OWNER_TO_PROFILE)}, got {owner!r}")
     mode = str(data.get("mode", "")).strip()
     if mode and mode not in VALID_MODES:
         errors.append(f"mode must be one of {sorted(VALID_MODES)}, got {mode!r}")
-    for field in ["allowed_scope", "forbidden_scope", "dependencies", "contracts_consumed", "contracts_produced_or_modified", "definition_of_done", "required_checks"]:
+    list_fields = ["allowed_scope", "forbidden_scope", "dependencies", "contracts_consumed", "contracts_produced_or_modified", "definition_of_done", "required_checks"]
+    for field in list_fields:
         if field in data and not isinstance(data[field], list):
             errors.append(f"{field} must be a list")
     allowed = set(map(str, data.get("allowed_scope") or []))
@@ -266,10 +299,15 @@ def validate_contract(data: dict[str, Any]) -> tuple[list[str], list[str]]:
     overlap = sorted(allowed & forbidden)
     if overlap:
         errors.append(f"allowed_scope overlaps forbidden_scope: {', '.join(overlap)}")
-    if mode == "coding" and not data.get("required_checks"):
-        warnings.append("coding task has no required_checks")
     if not data.get("allowed_scope"):
         errors.append("allowed_scope must not be empty")
+    if not data.get("definition_of_done"):
+        errors.append("definition_of_done must not be empty")
+    if mode in {"coding", "qa", "release", "revalidation"} and not data.get("required_checks"):
+        errors.append(f"{mode} task must declare required_checks")
+    report_format = data.get("report_format")
+    if not isinstance(report_format, dict) or not report_format:
+        errors.append("report_format must be a non-empty mapping")
     if data.get("task_id") and not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$", str(data["task_id"])):
         warnings.append("task_id contains unusual characters; prefer TASK-001 style IDs")
     return errors, warnings
@@ -294,18 +332,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 REPORT_REQUIRED_FIELDS = {
     "completion": [
-        "task_id", "owner_agent", "status", "branch", "workspace",
-        "changed_files", "contracts_changed", "tests_run", "test_result",
+        "schema_version", "report_id", "task_id", "owner_agent", "status", "branch", "workspace",
+        "base_revision", "revision", "changed_files", "contracts_changed", "tests_run", "test_result",
         "blockers", "downstream_impact", "recommended_next_actions",
     ],
     "qa": [
-        "task_id", "decision", "evidence", "checks_run", "failed_checks",
-        "contract_findings", "required_fixes", "follow_up_recommendations",
+        "schema_version", "report_id", "task_id", "target_branch", "base_revision", "target_revision",
+        "decision", "evidence", "checks_run", "failed_checks", "contract_findings",
+        "required_fixes", "follow_up_recommendations",
     ],
     "impact": [
-        "source_task", "changed_files", "changed_artifacts", "change_type",
-        "impacted_tasks", "impacted_contracts", "required_revalidation",
-        "risk_level", "notes",
+        "schema_version", "report_id", "source_task", "base_revision", "changed_revision",
+        "changed_files", "changed_artifacts", "change_type", "impacted_tasks",
+        "impacted_contracts", "required_revalidation", "risk_level", "notes",
     ],
 }
 
@@ -334,9 +373,22 @@ def validate_report_data(kind: str, data: dict[str, Any], contract: dict[str, An
             errors.append(f"missing required field: {field}")
 
     list_fields = {
-        "completion": ["changed_files", "contracts_changed", "tests_run", "assumptions", "blockers", "downstream_impact", "recommended_next_actions"],
-        "qa": ["checks_run", "failed_checks", "contract_findings", "security_findings", "accessibility_findings", "performance_findings", "required_fixes", "follow_up_recommendations"],
-        "impact": ["changed_files", "changed_artifacts", "impacted_tasks", "impacted_contracts", "required_revalidation", "notes"],
+        "completion": [
+            "changed_files", "contracts_changed", "acceptance_evidence", "tests_run",
+            "evidence", "assumptions", "blockers", "residual_risks",
+            "downstream_impact", "recommended_next_actions",
+        ],
+        "qa": [
+            "evidence", "acceptance_coverage", "checks_run", "failed_checks",
+            "contract_findings", "security_findings", "accessibility_findings",
+            "performance_findings", "operational_findings", "required_fixes",
+            "residual_risks", "follow_up_recommendations", "revalidation_scope",
+        ],
+        "impact": [
+            "changed_files", "changed_artifacts", "classification_evidence",
+            "impacted_tasks", "impacted_contracts", "stale_reports_or_tasks",
+            "required_revalidation", "registry_updates", "notes",
+        ],
     }[kind]
     for field in list_fields:
         if field in data and not isinstance(data[field], list):
@@ -344,25 +396,37 @@ def validate_report_data(kind: str, data: dict[str, Any], contract: dict[str, An
 
     if kind == "completion":
         status = str(data.get("status", "")).strip()
-        if status and status not in VALID_COMPLETION_STATUSES:
+        if not status or status not in VALID_COMPLETION_STATUSES:
             errors.append(f"status must be one of {sorted(VALID_COMPLETION_STATUSES)}, got {status!r}")
         if status == "completed" and not data.get("tests_run"):
-            warnings.append("completed report has empty tests_run")
+            errors.append("completed report must list tests_run")
+        if status == "completed" and str(data.get("test_result") or "").strip() != "passed":
+            errors.append("completed report requires test_result: passed")
+        if not data.get("revision"):
+            errors.append("completion report must pin the candidate revision")
     elif kind == "qa":
         decision = str(data.get("decision", "")).strip()
-        if decision and decision not in VALID_QA_DECISIONS:
+        if not decision or decision not in VALID_QA_DECISIONS:
             errors.append(f"decision must be one of {sorted(VALID_QA_DECISIONS)}, got {decision!r}")
         if decision in {"fail", "blocked"} and not data.get("required_fixes"):
-            warnings.append("failing/blocked QA report should list required_fixes")
+            errors.append("failing/blocked QA report must list required_fixes or restart conditions")
+        if decision in {"pass", "pass_with_notes"} and data.get("failed_checks"):
+            errors.append("passing QA report must not contain failed_checks")
+        if decision in {"pass", "pass_with_notes"} and not data.get("evidence"):
+            errors.append("passing QA report must contain evidence")
+        if not data.get("target_revision"):
+            errors.append("QA report must pin the reviewed candidate revision")
     elif kind == "impact":
         change_type = str(data.get("change_type", "")).strip()
         risk = str(data.get("risk_level", "")).strip()
-        if change_type and change_type not in VALID_CHANGE_TYPES:
+        if not change_type or change_type not in VALID_CHANGE_TYPES:
             errors.append(f"change_type must be one of {sorted(VALID_CHANGE_TYPES)}, got {change_type!r}")
-        if risk and risk not in VALID_RISK_LEVELS:
+        if not risk or risk not in VALID_RISK_LEVELS:
             errors.append(f"risk_level must be one of {sorted(VALID_RISK_LEVELS)}, got {risk!r}")
         if change_type in {"behavioral", "breaking", "unclear"} and not data.get("required_revalidation"):
-            warnings.append("behavioral/breaking/unclear impact should list required_revalidation")
+            errors.append("behavioral/breaking/unclear impact must list required_revalidation")
+        if not data.get("changed_revision"):
+            errors.append("impact report must pin the changed revision")
 
     if contract:
         expected_task_id = str(contract.get("task_id") or "")
@@ -375,7 +439,7 @@ def validate_report_data(kind: str, data: dict[str, Any], contract: dict[str, An
             run_checks = set(map(str, data.get(run_field) or []))
             missing = sorted(required_checks - run_checks)
             if missing:
-                warnings.append(f"report does not mention required checks: {', '.join(missing)}")
+                errors.append(f"report does not mention required checks: {', '.join(missing)}")
     return errors, warnings
 
 
@@ -421,6 +485,29 @@ def _load_optional_report(path: Path, kind: str, contract: dict[str, Any] | None
     return data, errors, warnings
 
 
+def _completion_qa_consistency_errors(completion: dict[str, Any] | None, qa: dict[str, Any] | None) -> list[str]:
+    errors: list[str] = []
+    if not completion or not qa:
+        return errors
+    completion_revision = str(completion.get("revision") or "").strip()
+    qa_revision = str(qa.get("target_revision") or "").strip()
+    if not completion_revision:
+        errors.append("completion report must pin revision before QA can approve integration")
+    if not qa_revision:
+        errors.append("QA report must pin target_revision before integration")
+    if completion_revision and qa_revision and completion_revision != qa_revision:
+        errors.append(
+            f"QA target_revision {qa_revision!r} does not match completion revision {completion_revision!r}"
+        )
+    completion_branch = str(completion.get("branch") or "").strip()
+    qa_branch = str(qa.get("target_branch") or "").strip()
+    if completion_branch and qa_branch and completion_branch != qa_branch:
+        errors.append(
+            f"QA target_branch {qa_branch!r} does not match completion branch {completion_branch!r}"
+        )
+    return errors
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     errors: list[str] = []
     warnings: list[str] = []
@@ -455,6 +542,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
                 errors.extend(e); warnings.extend(w)
                 if qa and qa.get("decision") not in {"pass", "pass_with_notes"}:
                     errors.append(f"QA decision must be pass/pass_with_notes for {args.stage}, got {qa.get('decision')!r}")
+                errors.extend(_completion_qa_consistency_errors(completion, qa))
             contracts_changed = list((completion or {}).get("contracts_changed") or [])
             if args.stage == "done" and contracts_changed:
                 impact, e, w = _load_optional_report(impact_path, "impact", contract)
@@ -612,6 +700,11 @@ def _changed_contracts(graph: dict[str, Any], changed_files: list[str]) -> list[
     return hits
 
 
+def _git_head(repo: Path) -> str:
+    proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, text=True, capture_output=True)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
 def _impact_report(task_id: str, changed_files: list[str], graph: dict[str, Any]) -> dict[str, Any]:
     hits = _changed_contracts(graph, changed_files)
     impacted_tasks: list[str] = []
@@ -627,14 +720,22 @@ def _impact_report(task_id: str, changed_files: list[str], graph: dict[str, Any]
     change_type = "internal" if not hits else "behavioral"
     risk_level = "low" if not hits else "medium"
     return {
+        "schema_version": "mad.impact-report/v1",
+        "report_id": f"{task_id}-impact-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "source_task": task_id,
+        "base_revision": "",
+        "changed_revision": _git_head(Path.cwd()),
         "changed_files": changed_files,
         "changed_artifacts": [entry.get("path") for _, entry in hits],
         "change_type": change_type,
+        "classification_evidence": ["Generated from git diff and contract registry"],
         "impacted_tasks": impacted_tasks,
         "impacted_contracts": impacted_contracts,
+        "stale_reports_or_tasks": [],
         "required_revalidation": required_revalidation,
+        "registry_updates": [],
         "risk_level": risk_level,
+        "rollback_or_migration": "",
         "notes": ["Generated by hermes mad impact"],
     }
 
@@ -877,11 +978,13 @@ def cmd_impact(args: argparse.Namespace) -> int:
             if proc.returncode != 0:
                 raise ValueError(f"not a git repository: {repo}")
             repo = Path(proc.stdout.strip())
-        changed, git_warnings = _git_changed_files(repo, args.base)
+        changed, git_errors = _git_changed_files(repo, args.base)
         report = _impact_report(args.task_id, changed, graph)
+        report["base_revision"] = args.base or ""
+        report["changed_revision"] = _git_head(repo)
         errors, warnings = validate_report_data("impact", report)
+        errors.extend(git_errors)
         warnings.extend(graph_warnings)
-        warnings.extend(git_warnings)
         if args.out:
             out = Path(args.out).expanduser()
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -1021,27 +1124,32 @@ def _matches(path: str, patterns: list[str]) -> bool:
 
 
 def _git_changed_files(repo: Path, base: str | None) -> tuple[list[str], list[str]]:
-    warnings: list[str] = []
+    errors: list[str] = []
     files: set[str] = set()
-    def collect(cmd: list[str]) -> None:
+
+    def collect(cmd: list[str], *, fatal: bool = True) -> None:
         proc = subprocess.run(cmd, cwd=repo, text=True, capture_output=True)
         if proc.returncode != 0:
-            warnings.append(proc.stderr.strip() or f"command failed: {' '.join(cmd)}")
+            msg = proc.stderr.strip() or proc.stdout.strip() or f"command failed: {' '.join(cmd)}"
+            if fatal:
+                errors.append(msg)
             return
         for line in proc.stdout.splitlines():
             if line.strip():
                 files.add(line.strip())
+
     if base:
-        collect(["git", "diff", "--name-only", f"{base}...HEAD"])
+        collect(["git", "diff", "--name-only", f"{base}...HEAD"], fatal=True)
     else:
         proc = subprocess.run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=repo, text=True, capture_output=True)
         if proc.returncode == 0 and proc.stdout.strip():
-            collect(["git", "diff", "--name-only", f"{proc.stdout.strip()}...HEAD"])
+            collect(["git", "diff", "--name-only", f"{proc.stdout.strip()}...HEAD"], fatal=True)
         else:
-            collect(["git", "diff", "--name-only", "HEAD~1...HEAD"])
-    collect(["git", "diff", "--name-only"])
-    collect(["git", "diff", "--cached", "--name-only"])
-    return sorted(files), warnings
+            collect(["git", "diff", "--name-only", "HEAD~1...HEAD"], fatal=True)
+    collect(["git", "diff", "--name-only"], fatal=True)
+    collect(["git", "diff", "--cached", "--name-only"], fatal=True)
+    collect(["git", "ls-files", "--others", "--exclude-standard"], fatal=True)
+    return sorted(files), errors
 
 
 def cmd_check_scope(args: argparse.Namespace) -> int:
@@ -1057,18 +1165,19 @@ def cmd_check_scope(args: argparse.Namespace) -> int:
             if proc.returncode != 0:
                 raise ValueError(f"not a git repository: {repo}")
             repo = Path(proc.stdout.strip())
-        changed, git_warnings = _git_changed_files(repo, args.base)
-        warnings.extend(git_warnings)
+        changed, git_errors = _git_changed_files(repo, args.base)
+        errors.extend(git_errors)
         allowed = _norm_patterns(contract.get("allowed_scope") or [])
         forbidden = _norm_patterns(contract.get("forbidden_scope") or [])
         outside = [f for f in changed if not _matches(f, allowed)]
         forbidden_hits = [f for f in changed if _matches(f, forbidden)]
-        ok = not outside and not forbidden_hits
+        ok = not errors and not outside and not forbidden_hits
         _emit({
             "status": "PASS: diff stays within MAD scope" if ok else "FAIL: diff violates MAD scope",
             "changed_files": changed,
             "outside_allowed_scope": outside,
             "forbidden_scope_hits": forbidden_hits,
+            "errors": errors,
             "warnings": warnings,
             "messages": [f"changed files: {len(changed)}", f"outside allowed_scope: {len(outside)}", f"forbidden hits: {len(forbidden_hits)}"],
         }, args.json)
@@ -1136,6 +1245,7 @@ def _contract_from_plan_task(source_item: str, summary: str, task: Any, index: i
     forbidden_scope = _task_scope(task, "forbidden_scope")
     checks = _task_scope(task, "required_checks") or _default_checks(mode)
     return {
+        "schema_version": "mad.task-contract/v1",
         "task_id": f"TASK-{index:03d}",
         "source_item": source_item,
         "owner_agent": owner,
@@ -1150,6 +1260,7 @@ def _contract_from_plan_task(source_item: str, summary: str, task: Any, index: i
         "definition_of_done": _task_scope(task, "definition_of_done") or ["TODO: define task-specific completion criteria before dispatch"],
         "required_checks": checks,
         "report_format": {
+            "schema": "templates/completion-report.yaml",
             "required_fields": ["status", "changed_files", "tests_run", "blockers", "downstream_impact"],
         },
     }

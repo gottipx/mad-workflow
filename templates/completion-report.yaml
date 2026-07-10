@@ -1,13 +1,24 @@
-task_id: ""
-owner_agent: ""
-status: completed # completed | blocked | failed | partial
-branch: ""
-workspace: ""
+schema_version: mad.completion-report/v1
+report_id: TASK-000-completion-001
+task_id: TASK-000
+owner_agent: coding-agent
+status: partial # completed | partial | blocked | failed
+branch: agent/feature-000/task-000
+workspace: /absolute/path/to/worktree
+base_revision: "REPLACE_WITH_APPROVED_BASE_SHA"
+revision: "REPLACE_WITH_CANDIDATE_SHA"
 changed_files: []
 contracts_changed: []
-tests_run: []
-test_result: ""
+acceptance_evidence:
+  - criterion: AC-1
+    evidence: "command, output reference, or observation"
+tests_run:
+  - "<exact command or validation method>"
+test_result: not_run # passed | failed | partial | not_run
+evidence: []
 assumptions: []
 blockers: []
+residual_risks: []
 downstream_impact: []
-recommended_next_actions: []
+recommended_next_actions:
+  - Request QA review of the exact candidate revision when status is completed.

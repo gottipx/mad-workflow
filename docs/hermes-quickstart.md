@@ -196,22 +196,25 @@ This produces a role-specific prompt containing the task goal, allowed scope, fo
 
 Implemented:
 
-- Hermes plugin installer.
+- Hermes plugin installer with enablement verification.
 - MAD skill installation.
 - Optional MAD profile creation.
 - MAD board initialization.
-- Contract validation.
+- Contract validation with non-empty semantic fields and placeholder rejection.
 - Kanban task creation from contracts.
-- Git diff scope checking.
-- Contract-to-worker prompt rendering.
+- Git diff scope checking, including tracked, staged, and untracked files.
+- Completion, QA, and impact report validation.
+- Review, integration, and done gate evaluation via `hermes mad gate`.
+- Contract registry validation and consumer lookup.
+- Impact report generation from git diffs and contract registry data.
+- Deterministic draft task decomposition from feature plans.
+- GitHub issue/PR body generation, issue creation, and PR-link comments.
 
-Not yet implemented:
+Still intentionally outside this thin integration:
 
-- Automatic task decomposition from a feature brief.
-- Automatic QA report validation.
-- Release-agent merge orchestration.
-- First-class contract registry / dependency graph updates.
-- GitHub issue and PR automation.
-- Kanban state transition hooks that enforce MAD gates automatically.
+- Fully automatic worker dispatch without human/workstream review.
+- Direct protected-branch merge automation.
+- Global Hermes Kanban hooks that prevent users from bypassing `hermes mad gate` with raw Kanban commands.
+- A dashboard UI.
 
-The intended next step is to add Kanban lifecycle hooks so `Review`, `Integration`, and `Done` transitions can be blocked unless the required MAD reports and checks exist.
+Use the MAD commands as the enforceable path. Direct Kanban state mutations remain possible in Hermes itself and should be treated as an administrative override.

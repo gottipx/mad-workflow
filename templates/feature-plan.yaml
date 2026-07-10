@@ -1,15 +1,26 @@
-source_item: ""
-summary: ""
-execution_waves:
-  - wave: 1
-    purpose: "architecture and contracts"
-    tasks: []
-  - wave: 2
-    purpose: "coding"
-    tasks: []
-  - wave: 3
-    purpose: "qa and release"
-    tasks: []
-dependency_graph: {}
-risks: []
+schema_version: mad.feature-plan/v1
+source_item: FEATURE-000
+goal: "One measurable delivery outcome"
+non_goals: []
+approved_specification: ""
 open_decisions: []
+contracts: []
+risks: []
+waves:
+  - id: WAVE-1
+    purpose: Shape stable contracts and decisions.
+    depends_on: []
+    parallel_safe: false
+    tasks:
+      - task_id: TASK-001
+        title: Define the approved contract.
+        owner_agent: architect-agent
+        mode: architecture
+        goal: "Produce one approved, testable contract."
+        allowed_scope: []
+        forbidden_scope: []
+        dependencies: []
+        contracts_consumed: []
+        contracts_produced_or_modified: []
+        definition_of_done: []
+        required_checks: []

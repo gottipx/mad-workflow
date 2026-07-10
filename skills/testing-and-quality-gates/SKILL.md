@@ -1,51 +1,75 @@
 ---
 name: testing-and-quality-gates
-description: "define and run testing, review, security, accessibility, performance, build, and merge-readiness checks. use when the qa-agent validates a task, reviews code, prepares findings, or when the release-agent decides whether work can proceed toward merge."
+description: "Design and execute independent, risk-based validation for a pinned MAD task or integration candidate and issue a pass, pass-with-notes, fail, or blocked decision. Use for QA review, integration gates, regression analysis, and release readiness."
 ---
 
 # Testing and Quality Gates
 
-Use this skill to decide whether work can proceed.
+A quality gate proves an exact revision; it does not endorse an agent's narrative.
 
-## Test layers
+## Pin and validate inputs
 
-Use the smallest effective set for the change:
+1. Record repository, approved base, candidate branch, immutable revision, task contract, completion report, and impact report versions.
+2. Verify completion status, actual diff, scope, required checks, controlled contracts, and claimed evidence.
+3. Stop as `blocked` if candidate identity, required behavior, environment, authority, or critical contract input is missing.
 
-- unit tests
-- component tests
-- contract tests
-- integration tests
-- end-to-end tests
-- accessibility checks
-- security or static checks
-- build, type, and lint checks
-- performance checks where relevant
+Completion criterion: the evidence target is immutable and QA can trace requirements and risk to observable checks.
 
-## Review checklist
+## Risk model
 
-- task contract satisfied
-- scope respected
-- tests cover changed behavior
-- contracts remain compatible or impact is handled
-- security-sensitive behavior reviewed
-- UI follows design-system and accessibility rules when relevant
-- no unrelated refactoring
-- completion report is usable
+Classify:
 
-## Gate decision
+- changed behavior and blast radius
+- trust boundaries, auth, secrets, and sensitive data
+- API/schema/event/configuration and consumer compatibility
+- persistence, migration, partial failure, and rollback
+- UI states, accessibility, responsiveness, and async behavior
+- dependency/build/deployment and environment compatibility
+- performance, reliability, and observability expectations
 
-```yaml
-decision: pass | pass_with_notes | fail | blocked
-evidence:
-failed_checks:
-required_fixes:
-follow_up:
+Select the smallest check set that adequately covers the actual risk. Required contract checks are the floor, not the ceiling.
+
+## Evidence procedure
+
+1. Inspect the actual diff and verify allowed/forbidden scope.
+2. Map every definition-of-done item and acceptance criterion to evidence.
+3. Re-run critical claimed checks against the pinned revision.
+4. Exercise negative, boundary, permission, recovery, and concurrency paths when relevant.
+5. Validate controlled-contract compatibility, registry, consumers, and revalidation.
+6. Apply relevant security, privacy, accessibility, performance, migration, deployment, and rollback gates.
+7. Distinguish candidate regressions from pre-existing failures with baseline evidence.
+8. Challenge whether tests would detect the important defect they claim to guard against.
+9. Record exact command/method, revision/environment, result, and concise output/reference.
+10. Issue one decision using `templates/quality-gate-report.yaml`.
+
+Completion criterion: every applicable criterion/material risk is proven, failed, or explicitly blocks a trustworthy decision.
+
+## Decision policy
+
+- `pass`: all required/applicable evidence passed; scope and impact are clean; no material residual risk
+- `pass_with_notes`: blocking evidence passed; each note is truly non-blocking, risk-stated, and owned
+- `fail`: behavior, scope, compatibility, or required evidence is wrong; fixes and revalidation are concrete
+- `blocked`: a trustworthy decision is impossible because a prerequisite/authority/environment is missing
+
+Never use `pass_with_notes` for a failed required check, missing critical evidence, unresolved security/privacy/data-loss risk, unapproved behavioral/breaking contract, or unknown candidate revision.
+
+## Evidence quality
+
+Prefer reproducible command/CI output, direct diff/artifact inspection, deterministic validators, then documented manual observation. Another agent's report tells QA what to verify; it is not proof.
+
+Manual evidence names environment, steps, expected result, and observation. Screenshots prove appearance only. Flaky success is not a pass until characterized.
+
+## Finding format
+
+Each blocker contains severity/category, violated requirement/invariant, revision/location, reproduction/evidence, expected vs actual behavior, impact, minimum required outcome, and revalidation scope. Specify outcomes rather than implementation unless only one correction is safe.
+
+## Revalidation
+
+Any candidate change invalidates prior approval. Re-run checks based on changed risk and affected seams; do not blindly rerun too little or the entire suite. Integration candidates require combined-behavior evidence even when each task passed independently.
+
+When installed:
+
+```bash
+hermes mad validate-report qa <report.yaml> --contract <contract.yaml>
+hermes mad gate <kanban-task-id> --stage integration --qa-report <report.yaml>
 ```
-
-## Do not approve when
-
-- required tests are missing without justification
-- shared contract impact is unresolved
-- security or data risk is unresolved
-- build, type, or lint checks fail
-- UI accessibility or critical interaction behavior is broken

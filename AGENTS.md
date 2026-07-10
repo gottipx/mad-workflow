@@ -45,6 +45,23 @@ Agents assume concurrent work is happening. Coordination occurs only through tas
 
 Separation of duties is mandatory: the coding owner cannot be the approving QA owner for the same task, and the release agent cannot manufacture missing QA evidence.
 
+## Capability matrix
+
+| Capability | Human | Workstream | Architect | Coding | QA | Release |
+|---|---|---|---|---|---|---|
+| Approve product intent | yes | no | propose only | no | no | no |
+| Create/revise task contract | approve policy-sensitive changes | yes | propose | no | no | no |
+| Approve additive contract | yes if required by repo policy | coordinate | propose | no | attest risk only | no |
+| Approve behavioral/breaking/security/data contract | yes, recorded | no | propose | no | attest risk only | no |
+| Assign/claim task | override | assign | claim own assigned work | claim own assigned work | claim own assigned review | claim integration work |
+| Modify product source | by policy | no by default | only if explicitly contracted | yes, within scope | no while approving | deterministic integration only |
+| Issue quality attestation | no | no | no | self-check only | yes | final integration gate only |
+| Transition board state | override | yes | submit evidence | submit evidence | submit gate evidence | submit release evidence |
+| Waive failed gate or policy | yes, recorded | no | no | no | no | no |
+| Merge protected branch | approve/perform | no | no | no | no | only if explicitly delegated after recorded approval |
+
+A capability not listed as `yes` is not implied. Agents may propose outside-authority actions, but only the designated authority may approve them.
+
 ## Canonical artifacts
 
 Default locations are configurable, but a workstream must declare any alternative once and use it consistently.
@@ -54,6 +71,8 @@ Default locations are configurable, but a workstream must declare any alternativ
 .agents/reports/<TASK-ID>-completion.yaml
 .agents/reports/<TASK-ID>-quality-gate.yaml
 .agents/reports/<TASK-ID>-impact.yaml
+.agents/reports/<TASK-ID>-blocker.yaml
+.agents/reports/<SOURCE-ID>-release-candidate.yaml
 .agents/contracts.yaml
 ```
 
@@ -64,6 +83,8 @@ Canonical schemas live in `templates/`:
 - `templates/quality-gate-report.yaml`
 - `templates/impact-report.yaml`
 - `templates/feature-plan.yaml`
+- `templates/blocker-report.yaml`
+- `templates/release-candidate.yaml`
 
 Documentation and role files reference these templates rather than defining competing schemas.
 
@@ -85,19 +106,41 @@ If any condition is false, keep the task in `Backlog` or `Blocked`; do not compe
 
 ## Lifecycle and transition gates
 
+MAD uses two state machines: one for executable tasks and one for the source work item/release candidate.
+
+### Executable task state machine
+
 ```text
-Backlog -> Ready -> In Progress -> Review -> Integration -> Done
-                 \-> Blocked <-/       \-------/
+Draft -> Ready -> Running -> Candidate -> Verifying -> Verified -> Integrating -> Integrated -> Closed
+                         \-> Blocked <-/          \-> ChangesRequested -> Running
+Candidate|Verified -> Invalidated -> Ready
+Any nonterminal -> Failed | Cancelled
 ```
 
 | Transition | Authority | Required evidence |
 |---|---|---|
-| `Backlog -> Ready` | workstream | valid task contract and satisfied readiness rules |
-| `Ready -> In Progress` | workstream/assigned owner | isolated clean workspace, expected branch/base, dependencies available |
-| `In Progress -> Review` | workstream after coding handoff | valid completion report; scope evidence; required checks run, or explicit non-completion status |
-| `Review -> Integration` | QA | quality-gate decision `pass` or `pass_with_notes`; contract impact resolved |
-| `Integration -> Done` | release + required human approval | integrated checks pass; impact/revalidation complete; traceable PR/MR; rollback statement |
-| `* -> Blocked` | any owner | blocker report naming evidence, needed decision, and restart condition |
+| `Draft -> Ready` | workstream | valid task contract and satisfied readiness rules |
+| `Ready -> Running` | workstream/assigned owner | isolated clean workspace or declared read-only/artifact mode; expected branch/base; dependencies available |
+| `Running -> Candidate` | assigned owner | valid completion report; immutable candidate revision; scope evidence; required checks passed for `completed` status |
+| `Candidate -> Verifying` | workstream/QA | completion handoff accepted for independent review |
+| `Verifying -> Verified` | QA | quality-gate decision `pass` or `pass_with_notes`; exact candidate revision matches completion revision |
+| `Verifying -> ChangesRequested` | QA | failed QA report with concrete fixes and revalidation scope |
+| `Verified -> Integrating` | workstream/release | dependency order and impact/revalidation are current |
+| `Integrating -> Integrated` | release | integration step evidence for the exact candidate or new integration revision |
+| `Integrated -> Closed` | workstream/release + required human approval where applicable | final traceability, release candidate, rollback statement, and approval reference |
+| `* -> Blocked` | any owner | blocker report naming class, evidence, owner, and restart condition |
+| `Candidate|Verified -> Invalidated` | workstream/QA/release | changed candidate SHA, input digest, controlled contract, or required environment invalidates prior evidence |
+
+### Source work-item state machine
+
+```text
+Proposed -> Planned -> Executing -> ReleaseCandidate -> AwaitingApproval -> Released
+Any nonterminal -> Blocked | Abandoned
+```
+
+The work item advances from task evidence. It must not be marked `ReleaseCandidate` until all included executable tasks are `Verified` or explicitly excluded.
+
+Transition events SHOULD be append-only and compare against the task/work-item revision last observed by the actor. A stale actor must publish evidence or a blocker; it must not overwrite newer state.
 
 `pass_with_notes` permits integration only when every note is non-blocking, owned, and recorded as a follow-up. A warning never overrides a failed required check.
 
@@ -110,6 +153,17 @@ hermes mad gate <kanban-task-id> --stage done
 ```
 
 These commands verify artifacts; they do not replace human judgment for product, security, compatibility, or release risk.
+
+## Workspace modes
+
+| Mode | Use | Branch requirement |
+|---|---|---|
+| `write_isolated` | coding or any source-modifying task | unique task branch/worktree required |
+| `read_only_checkout` | QA or inspection of an immutable revision | no product branch mutation; publish attestation artifact only |
+| `artifact_only` | planning, architecture, reports, contracts outside product repo | no product branch unless artifact storage requires one |
+| `integration` | release convergence | unique integration branch/worktree required |
+
+The one-branch rule applies to write ownership. It does not require QA to mutate the candidate branch or architecture tasks to create product branches when they only produce artifacts.
 
 ## Evidence policy
 
@@ -153,8 +207,26 @@ Prefer expand-and-contract migration over synchronized breaking changes.
 - `partial`: useful scoped output exists, but definition of done is not met
 - `blocked`: progress requires an external decision, dependency, permission, or scope change
 - `failed`: attempted execution produced a defect or failed evidence that must be corrected
+- `cancelled`: authority intentionally stopped the task before completion
 
 Only `completed` work may request QA. A `partial` report is a handoff, not approval to integrate.
+
+## Failure taxonomy
+
+Every blocker or failure classifies the condition:
+
+| Class | Meaning | Default disposition |
+|---|---|---|
+| `input` | missing/contradictory requirement, contract, acceptance criterion, or artifact | block until owner supplies authoritative input |
+| `dependency` | required task, artifact, service, package, or environment is unavailable/stale | block or invalidate dependent work |
+| `policy` | requested action exceeds authority, scope, or human approval boundary | stop and request recorded approval/amendment |
+| `test` | required evidence fails against the candidate | fail/changes requested |
+| `tool` | local toolchain cannot produce trustworthy evidence | block unless approved equivalent evidence exists |
+| `infrastructure` | external platform/CI/network/resource failure prevents validation | block with retry owner and restart condition |
+| `security` | unresolved security/privacy/compliance/data-loss risk | block; human/security authority required |
+| `conflict` | branch/content/integration conflict prevents safe continuation | block or return to owner depending on semantic ownership |
+
+Reports include retryability, owner, evidence references, resolution condition, resume state, and preserved artifacts when applicable. Skipped required checks produce `blocked` or `failed`, never `pass_with_notes`.
 
 ## Escalation protocol
 

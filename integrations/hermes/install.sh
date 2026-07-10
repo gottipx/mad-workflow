@@ -80,7 +80,11 @@ done
 echo "Installed MAD skills to $SKILLS_DEST"
 
 if [[ "$ENABLE" -eq 1 ]]; then
-  hermes plugins enable mad-workflow >/dev/null || true
+  hermes plugins enable mad-workflow >/dev/null
+  if ! hermes mad --help >/dev/null 2>&1; then
+    echo "Error: enabled plugin, but 'hermes mad --help' is not available." >&2
+    exit 1
+  fi
   echo "Enabled Hermes plugin: mad-workflow"
 else
   echo "Skipped plugin enablement (--no-enable)"

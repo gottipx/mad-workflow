@@ -1,5 +1,9 @@
+schema_version: mad.quality-gate-report/v1
+report_id: TASK-001-quality-gate-001
 task_id: TASK-001
 target_branch: agent/feature-001/task-001
+base_revision: example-base-revision
+target_revision: example-candidate-revision
 decision: pass
 evidence:
   - Scope check passed
@@ -11,5 +15,8 @@ contract_findings: []
 security_findings: []
 accessibility_findings: []
 performance_findings: []
+operational_findings: []
 required_fixes: []
+residual_risks: []
 follow_up_recommendations: []
+revalidation_scope: []

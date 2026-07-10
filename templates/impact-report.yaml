@@ -1,9 +1,18 @@
-source_task: ""
+schema_version: mad.impact-report/v1
+report_id: TASK-000-impact-001
+source_task: TASK-000
+base_revision: "REPLACE_WITH_APPROVED_BASE_SHA"
+changed_revision: "REPLACE_WITH_CHANGED_SHA"
 changed_files: []
 changed_artifacts: []
-change_type: additive # internal | additive | behavioral | breaking | unclear
+change_type: unclear # internal | additive | behavioral | breaking | unclear
+classification_evidence: []
 impacted_tasks: []
 impacted_contracts: []
-required_revalidation: []
-risk_level: low # low | medium | high
+stale_reports_or_tasks: []
+required_revalidation:
+  - Replace with task IDs or report no required revalidation only after classification is not behavioral/breaking/unclear.
+registry_updates: []
+risk_level: high # low | medium | high
+rollback_or_migration: ""
 notes: []

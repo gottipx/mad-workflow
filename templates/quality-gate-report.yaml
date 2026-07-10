@@ -1,12 +1,25 @@
-task_id: ""
-target_branch: ""
-decision: pass # pass | pass_with_notes | fail | blocked
-evidence: []
+schema_version: mad.quality-gate-report/v1
+report_id: TASK-000-quality-gate-001
+task_id: TASK-000
+target_branch: agent/feature-000/task-000
+base_revision: "REPLACE_WITH_APPROVED_BASE_SHA"
+target_revision: "REPLACE_WITH_REVIEWED_CANDIDATE_SHA"
+decision: blocked # pass | pass_with_notes | fail | blocked
+evidence:
+  - "<reproducible evidence or artifact reference>"
+acceptance_coverage:
+  - criterion: AC-1
+    result: not_run # passed | failed | not_run
+    evidence: ""
 checks_run: []
 failed_checks: []
 contract_findings: []
 security_findings: []
 accessibility_findings: []
 performance_findings: []
-required_fixes: []
+operational_findings: []
+required_fixes:
+  - Replace placeholders and run the required checks before approval.
+residual_risks: []
 follow_up_recommendations: []
+revalidation_scope: []

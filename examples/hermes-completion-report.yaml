@@ -1,8 +1,12 @@
+schema_version: mad.completion-report/v1
+report_id: TASK-001-completion-001
 task_id: TASK-001
 owner_agent: coding-agent
 status: completed
 branch: agent/feature-001/task-001
 workspace: /tmp/example-worktree
+base_revision: example-base-revision
+revision: example-candidate-revision
 changed_files:
   - src/example/a.txt
 contracts_changed: []
@@ -11,6 +15,7 @@ tests_run:
 test_result: passed
 assumptions: []
 blockers: []
+residual_risks: []
 downstream_impact: []
 recommended_next_actions:
   - Request QA gate review

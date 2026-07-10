@@ -1,20 +1,29 @@
-task_id: ""
-source_item: ""
-owner_agent: "" # workstream-agent | architect-agent | coding-agent | qa-agent | release-agent
-goal: ""
-context: ""
-mode: "" # architecture | coding | qa | release | revalidation
-allowed_scope: []
-forbidden_scope: []
+schema_version: mad.task-contract/v1
+task_id: TASK-000
+source_item: FEATURE-000
+owner_agent: coding-agent # workstream-agent | architect-agent | coding-agent | qa-agent | release-agent
+goal: "One observable task outcome"
+context: |
+  Authoritative background needed without hidden chat history.
+  Approved base revision: REPLACE_WITH_APPROVED_BASE_SHA
+mode: coding # planning | architecture | coding | qa | release | revalidation
+acceptance_criteria:
+  - AC-1
+allowed_scope:
+  - src/example/**
+forbidden_scope:
+  - docs/contracts/**
+  - migrations/**
 dependencies: []
 contracts_consumed: []
 contracts_produced_or_modified: []
-definition_of_done: []
-required_checks: []
+definition_of_done:
+  - Observable behavior and critical failure path satisfy AC-1.
+  - Required evidence passes on the reported revision.
+  - Completion report and downstream-impact statement are complete.
+required_checks:
+  - pytest tests/example
 report_format:
-  required_fields:
-    - status
-    - changed_files
-    - tests_run
-    - blockers
-    - downstream_impact
+  schema: templates/completion-report.yaml
+  template: templates/completion-report.yaml
+  destination: .agents/reports/TASK-000-completion.yaml
