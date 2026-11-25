@@ -1,0 +1,44 @@
+{
+  "name": "mad-workflow",
+  "version": "0.1.0",
+  "description": "MAD, the Multi-Agent Development workflow: one coordinator, parallel workers on Claude Code, Codex or OpenCode, and four human gates.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "orca",
+    "multi-agent",
+    "ai-agents",
+    "workflow",
+    "cli"
+  ],
+  "homepage": "https://gottipx.github.io/mad-workflow/",
+  "bugs": {
+    "url": "https://github.com/gottipx/mad-workflow/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gottipx/mad-workflow.git",
+    "directory": "package"
+  },
+  "license": "MIT",
+  "author": "Alessandro S.",
+  "type": "module",
+  "bin": {
+    "mad": "bin/mad.mjs"
+  },
+  "files": [
+    "bin/",
+    "kit/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "sync-kit": "node scripts/sync-kit.mjs",
+    "prepack": "node scripts/sync-kit.mjs",
+    "install-local": "node scripts/install-local.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}

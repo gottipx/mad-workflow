@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAD Workflow</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* Layout: single reading column; diagram, tables and code scroll inside their own boxes */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --ink:#1b2230; --muted:#5b6577; --line:#d9dee7;
+  --accent:#3b5bdb; --gate:#c2410c; --gate-bg:#fff1e8;
+  --display:"Space Grotesk",system-ui,sans-serif; --body:"Inter",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  color-scheme:dark; --bg:#12151c; --surface:#1a1f29; --ink:#e6e9ef; --muted:#9aa3b5; --line:#2c3340;
+  --accent:#8ea2ff; --gate:#fb923c; --gate-bg:#2a1c12;}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 64px}
+.wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:52px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.2}
+h1{font-size:2.4rem} h2{font-size:1.45rem} h3{font-size:1.05rem}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:.8rem;color:var(--accent)}
+.lede{color:var(--muted);font-size:1.05rem}
+section{display:flex;flex-direction:column;gap:16px}
+nav{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.92rem}
+nav a{color:var(--accent);text-decoration:none} nav a:hover{text-decoration:underline}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;overflow-x:auto}
+.box .mermaid{margin:0;display:flex;justify-content:center}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:.85rem;color:var(--muted)}
+.chip{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+ul,ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:8px}
+li{max-width:72ch}
+.gate{color:var(--gate);font-weight:600;background:var(--gate-bg);padding:1px 6px;border-radius:4px;font-size:.85em;white-space:nowrap;align-self:flex-start}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--display);font-weight:500;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}
+code{font-family:var(--mono);font-size:.85em;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+pre.code{margin:0;font-family:var(--mono);font-size:.82rem;line-height:1.55;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;overflow-x:auto}
+.phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.phase{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.phase ul{font-size:.9rem;gap:4px;flex:1}
+a{color:var(--accent)}
+.foot{display:flex;flex-wrap:wrap;gap:8px 20px;padding-top:20px;border-top:1px solid var(--line);font-size:.9rem;color:var(--muted)}
+.foot a{text-decoration:none} .foot a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <span class="eyebrow">Multi-Agent Development workflow</span>
+    <h1>MAD Workflow</h1>
+    <p class="lede">A coordinator turns your idea into a spec and small task cards. Workers build them in parallel, each in its own worktree, on Claude, Codex or OpenCode. You decide at four gates; in between, the agents work on their own.</p>
+    <nav>
+      <a href="#install">Quick install</a><a href="#start">Get started</a><a href="#how">How it works</a><a href="#decide">What you decide</a>
+      <a href="#blocks">Building blocks</a><a href="#safety">Safety and cost</a><a href="#more">Good to know</a>
+    </nav>
+  </header>
+
+  <section id="install">
+    <h2>Quick install</h2>
+    <p>Needs <b>Node.js 18.17+</b>, <b>git</b>, and <a href="https://orca.dev">Orca</a> to run the workers. The same command works on macOS, Linux and Windows.</p>
+<pre class="code">npm install -g mad-workflow</pre>
+    <div class="tbl"><table>
+      <thead><tr><th>System</th><th>Get Node.js and git first</th></tr></thead>
+      <tbody>
+        <tr><td>macOS</td><td><code>brew install node git</code></td></tr>
+        <tr><td>Linux</td><td>Your package manager, e.g. <code>sudo apt install nodejs npm git</code>, or nodejs.org</td></tr>
+        <tr><td>Windows</td><td><code>winget install OpenJS.NodeJS.LTS</code> and <code>winget install Git.Git</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>From source: clone <a href="https://github.com/gottipx/mad-workflow">github.com/gottipx/mad-workflow</a>, then <code>cd package</code> and <code>npm run install-local</code>.</p>
+  </section>
+
+  <section id="start">
+    <h2>Get started</h2>
+<pre class="code">cd ~/Workspace/my-app
+mad init                 # sets up MAD in this folder</pre>
+    <div class="tbl"><table>
+      <thead><tr><th>Agent</th><th>Start MAD with</th></tr></thead>
+      <tbody>
+        <tr><td>Claude Code</td><td><code>/mad</code></td></tr>
+        <tr><td>Codex</td><td><code>$mad</code>, or ask "start MAD"</td></tr>
+        <tr><td>OpenCode</td><td>ask "start MAD"</td></tr>
+      </tbody>
+    </table></div>
+    <p>The agent you start MAD in becomes the coordinator. Start it inside Orca, so Orca can wake it when workers report, and pick a high-end model first: it stays the same for the whole run.</p>
+    <p><code>mad models</code> lists the agents installed on your machine and the models each offers. <code>mad update</code> refreshes MAD's own files in a project and keeps all of yours.</p>
+  </section>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <div class="legend">
+      <span><span class="chip" style="background:#fdba74"></span>You decide</span>
+      <span><span class="chip" style="background:#a5b4fc"></span>Coordinator</span>
+      <span><span class="chip" style="background:#86efac"></span>Workers</span>
+    </div>
+    <div class="box">
+<pre class="mermaid">
+flowchart TD
+  idea([Your idea]) --> plan["PLAN<br/>configure, grill product,<br/>grill stack"]
+  plan --> g1{{"GATE 1<br/>spec + stack"}}
+  g1 --> setup["SET UP<br/>keys, toolsets,<br/>playbooks, task cards"]
+  setup --> g2{{"GATE 2<br/>playbooks + cards"}}
+  g2 --> build["BUILD, wave by wave<br/>workers build, review,<br/>merge, integration check"]
+  build -. question .-> g3{{"GATE 3<br/>you answer"}}
+  g3 -. answer .-> build
+  build --> g4{{"GATE 4<br/>use the preview app"}}
+  g4 -- changes --> setup
+  g4 -- approved --> ship(["SHIP<br/>PR, CI deploys, retro"])
+
+  classDef human fill:#fdba74,stroke:#c2410c,color:#1b2230
+  classDef lead fill:#a5b4fc,stroke:#3b5bdb,color:#1b2230
+  classDef worker fill:#86efac,stroke:#15803d,color:#1b2230
+  class idea,g1,g2,g3,g4 human
+  class plan,setup,ship lead
+  class build worker
+</pre>
+    </div>
+    <div class="phases">
+      <div class="phase">
+        <h3>1. Plan</h3>
+        <ul>
+          <li>Pick models per role and limits</li>
+          <li>Grill the product → <code>SPEC.md</code></li>
+          <li>Grill the stack and toolchain → <code>STACK.md</code></li>
+        </ul>
+        <span class="gate">Gate 1</span>
+      </div>
+      <div class="phase">
+        <h3>2. Set up</h3>
+        <ul>
+          <li>You: accounts, logins, keys</li>
+          <li>Set up and check every tool</li>
+          <li>Write playbooks and task cards</li>
+        </ul>
+        <span class="gate">Gate 2</span>
+      </div>
+      <div class="phase">
+        <h3>3. Build</h3>
+        <ul>
+          <li>Wave 0: architect lays contracts</li>
+          <li>Each wave: workers build, reviewer checks, coordinator merges</li>
+          <li>Integration check and preview after every wave</li>
+        </ul>
+        <span class="gate">Gate 3 when needed</span>
+      </div>
+      <div class="phase">
+        <h3>4. Ship</h3>
+        <ul>
+          <li>You use the preview app</li>
+          <li>PR to main; CI deploys production</li>
+          <li>Retro: lessons go into rules and playbooks</li>
+        </ul>
+        <span class="gate">Gate 4</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="decide">
+    <h2>What you decide</h2>
+    <p>Every gate comes as a short summary with the 3-5 points the coordinator is least sure about, so you review the risky parts first.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>When</th><th>You decide</th></tr></thead>
+      <tbody>
+        <tr><td>Start</td><td>Agent, model and effort per role, parallel workers, review policy, app folder. Saved in <code>mad/config/mad.yaml</code>.</td></tr>
+        <tr><td><span class="gate">Gate 1</span></td><td>What to build and with which stack</td></tr>
+        <tr><td><span class="gate">Gate 2</span></td><td>The rules (playbooks) and how the work is split (task cards). The most important gate.</td></tr>
+        <tr><td><span class="gate">Gate 3</span></td><td>Worker questions the spec doesn't answer, tasks that failed review twice, and commands that failed 3 times</td></tr>
+        <tr><td><span class="gate">Gate 4</span></td><td>Whether the app is right. Approval opens the PR; CI deploys after you merge.</td></tr>
+      </tbody>
+    </table></div>
+    <p>Each role can run on a different agent. MAD offers only the models <code>mad models</code> finds on your machine.</p>
+<pre class="code">coordinator: { agent: claude, model: claude-opus-5-5, effort: high }      # the session you started MAD in
+
+roles:
+  architect: { agent: claude,   model: claude-opus-5-5,         effort: medium }  # mistakes spread: strong model
+  developer: { agent: opencode, model: deepseek/deepseek-v4-pro }                 # most of the work: drives cost
+  reviewer:  { agent: codex,    model: gpt-6.1-sol,             effort: low }     # another provider: second opinion
+limits:
+  max_parallel_workers: 3
+  max_fix_rounds: 2
+review: risky        # reviewer only for risk: high cards (contracts, login, data, deploy); or always / never</pre>
+  </section>
+
+  <section id="blocks">
+    <h2>Building blocks</h2>
+    <p>Every worker gets one message, built by a script: <b>role + rules + playbooks + task card</b>. Nothing else.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Block</th><th>What it is</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td><b>Roles</b></td><td>The job: <code>architect</code> lays contracts, <code>developer</code> builds one card, <code>reviewer</code> checks high-risk cards and never fixes</td><td><code>mad/roles/</code></td></tr>
+        <tr><td><b>Rules</b></td><td>Project-wide rules for every worker</td><td><code>mad/AGENTS.md</code></td></tr>
+        <tr><td><b>Agent playbooks</b></td><td>Rules for one area (web, backend, deploy): tools, boundaries, traps, proof of done, when to ask</td><td><code>mad/playbooks/</code></td></tr>
+        <tr><td><b>Task cards</b></td><td>One small task for one worker: files it owns, what to read, when it's done. Status is tracked in Orca.</td><td><code>mad/tasks/</code></td></tr>
+        <tr><td><b>Toolsets</b></td><td>The tools and MCP servers a worker actually has. Enforced by config; playbooks are only guidance.</td><td><code>.mcp.json</code>, agent configs</td></tr>
+        <tr><td><b>Orca</b></td><td>Starts workers in their own worktrees, carries questions and reports, wakes the coordinator</td><td>Orca app and <code>orca</code> CLI</td></tr>
+      </tbody>
+    </table></div>
+    <h3>A task card</h3>
+<pre class="code">---
+id: AUTH-1
+title: Login API
+role: developer
+playbooks: [backend]
+wave: 1
+risk: high
+needs: [AUTH-0]
+owns: [app/api/auth/*, app/db/migrations/002_users.sql]
+---
+## Context  (read only these)
+- app/contracts/auth.ts
+## Done when
+- POST /login returns a session; a wrong password returns 401
+- Tests pass (paste output)</pre>
+    <h3>Project layout</h3>
+<pre class="code">.claude/skills/mad/  .agents/skills/mad/    the skill (Claude Code + OpenCode, Codex)
+AGENTS.md                                  short pointer to the skill
+mad/
+  config/mad.yaml  SPEC.md  STACK.md  AGENTS.md  MAP.md  RUN.md
+  roles/  playbooks/  tasks/  dispatch/  kit/
+app/                                       the software only</pre>
+  </section>
+
+  <section id="safety">
+    <h2>Safety and cost</h2>
+    <div class="phases">
+      <div class="phase">
+        <h3>Keys</h3>
+        <ul>
+          <li>CLI logins live in your user folder; project keys in <code>.env</code>, never committed</li>
+          <li>Agents get <b>dev projects only</b>. Production keys live only in CI.</li>
+          <li>Smallest scope; read-only where possible</li>
+          <li>Never in playbooks, cards or chat</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <h3>Tokens</h3>
+        <ul>
+          <li>Cheaper models for developers and reviewers</li>
+          <li>Cards list exactly which files to read</li>
+          <li><code>mad/MAP.md</code> replaces exploring the repo</li>
+          <li>Reviewers start from the diff</li>
+          <li>Tests run once at the end, not after every edit</li>
+          <li>A command that fails 3 times becomes a question</li>
+          <li>A separate reviewer only for high-risk cards</li>
+          <li>Limits on parallel workers and fix rounds</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <h3>Quality</h3>
+        <ul>
+          <li>Contracts first, so parallel work fits together</li>
+          <li>No two cards in a wave own the same file</li>
+          <li>Proof instead of claims; a separate reviewer for high-risk cards</li>
+          <li>Integration check after every wave</li>
+          <li>Pinned toolchain (mise or pixi) in every worktree</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="more">
+    <h2>Good to know</h2>
+    <ul>
+      <li><b>Branches:</b> one run branch, and one branch per task in its own worktree. Each wave is merged into the run branch, and the next wave starts from it. The run branch becomes one PR into <code>main</code>. As soon as a task is merged, its worker is closed and its worktree and branch are removed (<code>mad clean</code> does the same by hand).</li>
+      <li><b>Deployment:</b> there's no deploy agent. Workers build the config and CI pipeline, previews deploy with dev keys after each wave, and production deploys only through CI after you merge.</li>
+      <li><b>Mixing agents:</b> Claude and Codex workers get their model and effort when they start. OpenCode workers get only a model, and Orca can set it only in an existing worktree, so MAD creates their worktree first. Claude-only skills don't carry over, so important knowledge goes into playbooks.</li>
+      <li><b>Resuming:</b> the run's state lives in <code>mad/RUN.md</code>, so starting MAD again continues where it left off.</li>
+      <li><b>Later ideas:</b> stack presets that new projects start from, and a read-only board showing task status.</li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <a href="https://github.com/gottipx/mad-workflow">GitHub</a>
+    <a href="https://www.npmjs.com/package/mad-workflow">npm</a>
+    <a href="https://github.com/gottipx/mad-workflow/issues">Issues</a>
+    <span>MIT license</span>
+  </footer>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+<script>
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const font = 'Inter, system-ui, sans-serif';
+  mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default', fontFamily: font,
+    themeVariables: { fontFamily: font, fontSize: '15px' }, flowchart: { useMaxWidth: true, padding: 14 } });
+  // Measure labels only after the web font has loaded, or boxes come out too small.
+  document.fonts.ready.then(() => mermaid.run());
+</script>
+</body>
+</html>

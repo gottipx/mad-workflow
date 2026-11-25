@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# Build output
+dist/
+build/
+.next/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Logs and local tool state
+*.log
+.claude/settings.local.json
+
+# Package build output (copied from kit/ by sync-kit)
+package/kit/
+*.tgz
+package/LICENSE

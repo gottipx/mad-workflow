@@ -1,0 +1,55 @@
+# MAD configuration for this project.
+# /mad asks you for these values at the start of a run, suggests a default
+# for each, and keeps your decisions here. Change them anytime; /mad re-reads
+# this file before every phase.
+
+# Where the software lives. MAD's own files stay in mad/.
+app_dir: app
+
+# The coordinator is the session you start MAD in. Its agent and model are chosen in
+# that agent before starting (Claude Code /model, Codex /model, OpenCode /models) and
+# stay the same for the whole run. Recorded here so a resumed run can check it.
+coordinator:
+  agent: claude
+  model: claude-opus-5-5
+  effort: high
+
+# Which agent and model each role runs on. Each role can use a different agent.
+#   agent:  any agent `mad models` lists, e.g. claude | codex | opencode | cursor
+#   model:  claude    e.g. claude-sonnet-5-5
+#           codex     e.g. gpt-6.1-sol
+#           opencode  provider/model, e.g. deepseek/deepseek-v4-pro
+#   effort: claude    low | medium | high | xhigh | max
+#           codex     the levels the model lists (mad models)
+#           opencode  not supported; leave empty
+#   Other agents: `mad models` says whether Orca can set their model. If not, leave
+#   model and effort empty; the agent uses its own default.
+roles:
+  architect:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+  developer:
+    agent: claude
+    model: claude-sonnet-5-5
+    effort: medium
+  reviewer:
+    agent: claude
+    model: claude-sonnet-5-5
+    effort: low
+
+# Cost and safety limits.
+limits:
+  max_parallel_workers: 3   # workers running at the same time
+  max_fix_rounds: 2         # review rounds before a task comes to you
+
+# When a separate reviewer checks a task.
+#   risky:  only cards marked risk: high (contracts, login, data, payments, security, deploy)
+#   always: every card
+#   never:  none; the coordinator checks reports and the integration check runs after each wave
+review: risky
+
+# Decided while grilling the stack. Reasons go in mad/STACK.md.
+toolchain:
+  manager: mise             # mise | pixi | none: pins languages and CLIs
+  packages: ""              # npm | pnpm | uv | ...: the project's library manager
